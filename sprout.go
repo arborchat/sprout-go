@@ -11,38 +11,72 @@ import (
 )
 
 const (
-	major = 0
-	minor = 0
+	CurrentMajor = 0
+	CurrentMinor = 0
 )
 
 type MessageID int
+
+type Verb string
+
+const (
+	Version     Verb = "version"
+	QueryAny    Verb = "query_any"
+	Query       Verb = "query"
+	Ancestry    Verb = "ancestry"
+	LeavesOf    Verb = "leaves_of"
+	Response    Verb = "response"
+	Subscribe   Verb = "subscribe"
+	Unsubscribe Verb = "unsubscribe"
+	Error       Verb = "error"
+	ErrorPart   Verb = "error_part"
+	OkPart      Verb = "ok_part"
+	Announce    Verb = "announce"
+)
+
+var formats = map[Verb]string{
+	Version:     " %d %d.%d\n",
+	QueryAny:    " %d %d %d\n",
+	Query:       " %d %d\n",
+	Ancestry:    " %d %d\n",
+	LeavesOf:    " %d %s %d\n",
+	Response:    " %d[%d] %d\n",
+	Subscribe:   " %d %d\n",
+	Unsubscribe: " %d %d\n",
+	Error:       " %d %d\n",
+	ErrorPart:   " %d[%d] %d\n",
+	OkPart:      " %d[%d] %d\n",
+	Announce:    " %d %d\n",
+}
 
 type SproutConn struct {
 	net.Conn
 	Major, Minor  int
 	nextMessageID MessageID
+
+	OnVersion func(s *SproutConn, major, minor int) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
 	s := &SproutConn{
-		Major:         major,
-		Minor:         minor,
+		Major:         CurrentMajor,
+		Minor:         CurrentMinor,
 		nextMessageID: 0,
 		Conn:          transport,
 	}
 	return s, nil
 }
 
-func (s *SproutConn) writeMessage(errorCtx, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
+func (s *SproutConn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
 	messageID = s.nextMessageID
 	s.nextMessageID++
-	return s.writeMessageWithID(messageID, errorCtx, format, fmtArgs...)
+	return s.writeMessageWithID(messageID, verb, format, fmtArgs...)
 }
 
-func (s *SproutConn) writeMessageWithID(messageIDIn MessageID, errorCtx, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
+func (s *SproutConn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
 	defer func() {
 		if err != nil {
-			err = fmt.Errorf(errorCtx, err)
+			err = fmt.Errorf("failed to send %s: %v", string(verb), err)
 		}
 	}()
 	opts := make([]interface{}, 1, len(fmtArgs)+1)
@@ -54,11 +88,13 @@ func (s *SproutConn) writeMessageWithID(messageIDIn MessageID, errorCtx, format 
 }
 
 func (s *SproutConn) SendVersion() (MessageID, error) {
-	return s.writeMessage("failed to send version: %v", "version %d %d.%d\n", s.Major, s.Minor)
+	op := Version
+	return s.writeMessage(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
 func (s *SproutConn) SendQueryAny(nodeType fields.NodeType, quantity int) (MessageID, error) {
-	return s.writeMessage("failed to send query_any: %v", "query_any %d %d %d\n", nodeType, quantity)
+	op := QueryAny
+	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)
 }
 
 func (s *SproutConn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
@@ -68,7 +104,8 @@ func (s *SproutConn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, err
 		_, _ = builder.Write(b)
 		builder.WriteString("\n")
 	}
-	return s.writeMessage("failed to send query: %v", "query %d %d\n%s", len(nodeIds), builder.String())
+	op := Query
+	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), builder.String())
 }
 
 type AncestryRequest struct {
@@ -86,12 +123,14 @@ func (s *SproutConn) SendAncestry(reqs ...AncestryRequest) (MessageID, error) {
 	for _, req := range reqs {
 		builder.WriteString(req.String())
 	}
-	return s.writeMessage("failed to send ancestry: %v", "ancestry %d %d\n%s", len(reqs), builder.String())
+	op := Ancestry
+	return s.writeMessage(op, string(op)+formats[op]+"%s", len(reqs), builder.String())
 }
 
 func (s *SproutConn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
 	id, _ := nodeId.MarshalText()
-	return s.writeMessage("failed to send leaves_of: %v", "leaves_of %d %s %d\n", string(id), quantity)
+	op := LeavesOf
+	return s.writeMessage(op, string(op)+formats[op], string(id), quantity)
 }
 
 func NodeLine(n forest.Node) string {
@@ -105,25 +144,26 @@ func (s *SproutConn) SendResponse(msgID MessageID, index int, nodes []forest.Nod
 	for _, n := range nodes {
 		builder.WriteString(NodeLine(n))
 	}
-	return s.writeMessageWithID(msgID, "failed to send response: %v", "response %d[%d] %d\n%s", index, len(nodes), builder.String())
+	op := Response
+	return s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", index, len(nodes), builder.String())
 }
 
-func (s *SproutConn) subscribeOp(operation string, communities []*forest.Community) (MessageID, error) {
+func (s *SproutConn) subscribeOp(op Verb, communities []*forest.Community) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, community := range communities {
 		id, _ := community.ID().MarshalText()
 		builder.WriteString(string(id))
 		builder.WriteString("\n")
 	}
-	return s.writeMessage("failed to send "+operation+": %v", operation+" %d %d\n%s", len(communities), builder.String())
+	return s.writeMessage(op, string(op)+formats[op]+"%s", len(communities), builder.String())
 }
 
 func (s *SproutConn) SendSubscribe(communities []*forest.Community) (MessageID, error) {
-	return s.subscribeOp("subscribe", communities)
+	return s.subscribeOp(Subscribe, communities)
 }
 
 func (s *SproutConn) SendUnsubscribe(communities []*forest.Community) (MessageID, error) {
-	return s.subscribeOp("unsubscribe", communities)
+	return s.subscribeOp(Unsubscribe, communities)
 }
 
 type ErrorCode int
@@ -133,15 +173,18 @@ const (
 )
 
 func (s *SproutConn) SendError(targetMessageID MessageID, errorCode ErrorCode) (MessageID, error) {
-	return s.writeMessageWithID(targetMessageID, "failed to send error: %v", "error %d %d", errorCode)
+	op := Error
+	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
 }
 
 func (s *SproutConn) SendErrorPart(targetMessageID MessageID, index int, errorCode ErrorCode) (MessageID, error) {
-	return s.writeMessageWithID(targetMessageID, "failed to send error: %v", "error_part %d[%d] %d", index, errorCode)
+	op := ErrorPart
+	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], index, errorCode)
 }
 
 func (s *SproutConn) SendOkPart(targetMessageID MessageID, index int) (MessageID, error) {
-	return s.writeMessageWithID(targetMessageID, "failed to send ok: %v", "ok_part %d[%d] %d", index)
+	op := OkPart
+	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], index)
 }
 
 func (s *SproutConn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
@@ -155,6 +198,31 @@ func (s *SproutConn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err
 		_, _ = builder.WriteString(enc)
 		builder.WriteString("\n")
 	}
+	op := Announce
 
-	return s.writeMessage("failed to make announcement: %v", "announce %d %d\n%s", len(nodes), builder.String())
+	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), builder.String())
+}
+
+func (s *SproutConn) readMessage() {
+	var word string
+	n, err := fmt.Fscanf(s.Conn, "%s", &word)
+	if err != nil {
+		//todo
+	} else if n < 1 {
+		//todo
+	}
+	switch Verb(word) {
+	case Version:
+		minor, major := 0, 0
+		n, err := fmt.Fscanf(s.Conn, formats[Version], &major, &minor)
+		if err != nil {
+			//todo
+		} else if n < 2 {
+			//todo
+		}
+		if err := s.OnVersion(s, major, minor); err != nil {
+			//todo
+		}
+	}
+
 }
