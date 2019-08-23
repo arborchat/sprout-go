@@ -54,7 +54,8 @@ type SproutConn struct {
 	Major, Minor  int
 	nextMessageID MessageID
 
-	OnVersion func(s *SproutConn, major, minor int) error
+	OnVersion  func(s *SproutConn, major, minor int) error
+	OnQueryAny func(s *SproutConn, messageID MessageID, nodeType fields.NodeType, quantity int) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -203,26 +204,49 @@ func (s *SproutConn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), builder.String())
 }
 
-func (s *SproutConn) readMessage() {
+func (s *SproutConn) scanOp(verb Verb, fields ...interface{}) error {
+	n, err := fmt.Fscanf(s.Conn, formats[verb], fields...)
+	if err != nil {
+		return fmt.Errorf("failed to scan %s: %v", verb, err)
+	} else if n < len(fields) {
+		return fmt.Errorf("failed to scan enough arguments for %s (got %d, expected %d)", verb, n, len(fields))
+	}
+	return nil
+}
+
+func (s *SproutConn) readMessage() error {
 	var word string
 	n, err := fmt.Fscanf(s.Conn, "%s", &word)
 	if err != nil {
-		//todo
+		return fmt.Errorf("error scanning verb: %v", err)
 	} else if n < 1 {
-		//todo
+		return fmt.Errorf("failed to read a verb")
 	}
-	switch Verb(word) {
+	verb := Verb(word)
+	switch verb {
 	case Version:
-		minor, major := 0, 0
-		n, err := fmt.Fscanf(s.Conn, formats[Version], &major, &minor)
-		if err != nil {
-			//todo
-		} else if n < 2 {
-			//todo
+		var (
+			major, minor int
+			messageID    MessageID
+		)
+		if err := s.scanOp(verb, &messageID, &major, &minor); err != nil {
+			return err
 		}
 		if err := s.OnVersion(s, major, minor); err != nil {
-			//todo
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
+	case QueryAny:
+		var (
+			messageID MessageID
+			nodeType  fields.NodeType
+			quantity  int
+		)
+		if err := s.scanOp(verb, &messageID, &nodeType, &quantity); err != nil {
+			return err
+		}
+		if err := s.OnQueryAny(s, messageID, nodeType, quantity); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	}
-
+	return nil
 }
