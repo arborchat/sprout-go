@@ -1,10 +1,12 @@
 package sprout
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"strings"
 
+	forest "git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 )
 
@@ -52,4 +54,19 @@ func (s *SproutConn) SendQuery(nodeIds []*fields.QualifiedHash) (messageID Messa
 		builder.WriteString("\n")
 	}
 	return s.writeMessage("failed to send query: %v", "query %d %d\n%s", len(nodeIds), builder.String())
+}
+
+func (s *SproutConn) Announce(nodes []forest.Node) (messageID MessageID, err error) {
+	builder := &strings.Builder{}
+	for _, node := range nodes {
+		id := node.ID()
+		b, _ := id.MarshalText()
+		n, _ := node.MarshalBinary()
+		enc := base64.URLEncoding.EncodeToString(n)
+		_, _ = builder.Write(b)
+		_, _ = builder.WriteString(enc)
+		builder.WriteString("\n")
+	}
+
+	return s.writeMessage("failed to make announcement: %v", "announce %d %d\n%s", len(nodes), builder.String())
 }
