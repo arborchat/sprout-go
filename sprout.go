@@ -6,7 +6,7 @@ import (
 	"net"
 	"strings"
 
-	"git.sr.ht/~whereswaldon/forest-go"
+	forest "git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 )
 
@@ -142,4 +142,19 @@ func (s *SproutConn) SendErrorPart(targetMessageID MessageID, index int, errorCo
 
 func (s *SproutConn) SendOkPart(targetMessageID MessageID, index int) (MessageID, error) {
 	return s.writeMessageWithID(targetMessageID, "failed to send ok: %v", "ok_part %d[%d] %d", index)
+}
+
+func (s *SproutConn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
+	builder := &strings.Builder{}
+	for _, node := range nodes {
+		id := node.ID()
+		b, _ := id.MarshalText()
+		n, _ := node.MarshalBinary()
+		enc := base64.URLEncoding.EncodeToString(n)
+		_, _ = builder.Write(b)
+		_, _ = builder.WriteString(enc)
+		builder.WriteString("\n")
+	}
+
+	return s.writeMessage("failed to make announcement: %v", "announce %d %d\n%s", len(nodes), builder.String())
 }
