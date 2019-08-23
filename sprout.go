@@ -23,6 +23,16 @@ type SproutConn struct {
 	nextMessageID MessageID
 }
 
+func New(transport net.Conn) (*SproutConn, error) {
+	s := &SproutConn{
+		Major:         major,
+		Minor:         minor,
+		nextMessageID: 0,
+		Conn:          transport,
+	}
+	return s, nil
+}
+
 func (s *SproutConn) writeMessage(errorCtx, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
 	messageID = s.nextMessageID
 	s.nextMessageID++
@@ -96,4 +106,40 @@ func (s *SproutConn) SendResponse(msgID MessageID, index int, nodes []forest.Nod
 		builder.WriteString(NodeLine(n))
 	}
 	return s.writeMessageWithID(msgID, "failed to send response: %v", "response %d[%d] %d\n%s", index, len(nodes), builder.String())
+}
+
+func (s *SproutConn) subscribeOp(operation string, communities []*forest.Community) (MessageID, error) {
+	builder := &strings.Builder{}
+	for _, community := range communities {
+		id, _ := community.ID().MarshalText()
+		builder.WriteString(string(id))
+		builder.WriteString("\n")
+	}
+	return s.writeMessage("failed to send "+operation+": %v", operation+" %d %d\n%s", len(communities), builder.String())
+}
+
+func (s *SproutConn) SendSubscribe(communities []*forest.Community) (MessageID, error) {
+	return s.subscribeOp("subscribe", communities)
+}
+
+func (s *SproutConn) SendUnsubscribe(communities []*forest.Community) (MessageID, error) {
+	return s.subscribeOp("unsubscribe", communities)
+}
+
+type ErrorCode int
+
+const (
+	ErrorMalformed ErrorCode = iota
+)
+
+func (s *SproutConn) SendError(targetMessageID MessageID, errorCode ErrorCode) (MessageID, error) {
+	return s.writeMessageWithID(targetMessageID, "failed to send error: %v", "error %d %d", errorCode)
+}
+
+func (s *SproutConn) SendErrorPart(targetMessageID MessageID, index int, errorCode ErrorCode) (MessageID, error) {
+	return s.writeMessageWithID(targetMessageID, "failed to send error: %v", "error_part %d[%d] %d", index, errorCode)
+}
+
+func (s *SproutConn) SendOkPart(targetMessageID MessageID, index int) (MessageID, error) {
+	return s.writeMessageWithID(targetMessageID, "failed to send ok: %v", "ok_part %d[%d] %d", index)
 }
