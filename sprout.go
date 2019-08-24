@@ -49,27 +49,27 @@ var formats = map[Verb]string{
 	Announce:    " %d %d\n",
 }
 
-type SproutConn struct {
+type Conn struct {
 	net.Conn
 	Major, Minor  int
 	nextMessageID MessageID
 
-	OnVersion     func(s *SproutConn, messageID MessageID, major, minor int) error
-	OnQueryAny    func(s *SproutConn, messageID MessageID, nodeType fields.NodeType, quantity int) error
-	OnQuery       func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnAncestry    func(s *SproutConn, messageID MessageID, ancestryRequests []AncestryRequest) error
-	OnLeavesOf    func(s *SproutConn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
-	OnResponse    func(s *SproutConn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
-	OnSubscribe   func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnUnsubscribe func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnError       func(s *SproutConn, messageID MessageID, errorCode ErrorCode) error
-	OnErrorPart   func(s *SproutConn, messageID MessageID, index int, errorCode ErrorCode) error
-	OnOkPart      func(s *SproutConn, messageID MessageID, index int) error
-	OnAnnounce    func(s *SproutConn, messageID MessageID, nodes []forest.Node) error
+	OnVersion     func(s *Conn, messageID MessageID, major, minor int) error
+	OnQueryAny    func(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error
+	OnQuery       func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnAncestry    func(s *Conn, messageID MessageID, ancestryRequests []AncestryRequest) error
+	OnLeavesOf    func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
+	OnResponse    func(s *Conn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
+	OnSubscribe   func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnUnsubscribe func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnError       func(s *Conn, messageID MessageID, errorCode ErrorCode) error
+	OnErrorPart   func(s *Conn, messageID MessageID, index int, errorCode ErrorCode) error
+	OnOkPart      func(s *Conn, messageID MessageID, index int) error
+	OnAnnounce    func(s *Conn, messageID MessageID, nodes []forest.Node) error
 }
 
-func New(transport net.Conn) (*SproutConn, error) {
-	s := &SproutConn{
+func NewConn(transport net.Conn) (*Conn, error) {
+	s := &Conn{
 		Major:         CurrentMajor,
 		Minor:         CurrentMinor,
 		nextMessageID: 0,
@@ -78,13 +78,13 @@ func New(transport net.Conn) (*SproutConn, error) {
 	return s, nil
 }
 
-func (s *SproutConn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
+func (s *Conn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
 	messageID = s.nextMessageID
 	s.nextMessageID++
 	return s.writeMessageWithID(messageID, verb, format, fmtArgs...)
 }
 
-func (s *SproutConn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
+func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("failed to send %s: %v", string(verb), err)
@@ -98,17 +98,17 @@ func (s *SproutConn) writeMessageWithID(messageIDIn MessageID, verb Verb, format
 	return messageID, err
 }
 
-func (s *SproutConn) SendVersion() (MessageID, error) {
+func (s *Conn) SendVersion() (MessageID, error) {
 	op := Version
 	return s.writeMessage(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
-func (s *SproutConn) SendQueryAny(nodeType fields.NodeType, quantity int) (MessageID, error) {
+func (s *Conn) SendQueryAny(nodeType fields.NodeType, quantity int) (MessageID, error) {
 	op := QueryAny
 	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)
 }
 
-func (s *SproutConn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
+func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, nodeId := range nodeIds {
 		b, _ := nodeId.MarshalText()
@@ -131,7 +131,7 @@ func (r AncestryRequest) String() string {
 	return fmt.Sprintf(ancestryRequestLinePattern, r.Levels, string(b))
 }
 
-func (s *SproutConn) SendAncestry(reqs ...AncestryRequest) (MessageID, error) {
+func (s *Conn) SendAncestry(reqs ...AncestryRequest) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, req := range reqs {
 		builder.WriteString(req.String())
@@ -140,7 +140,7 @@ func (s *SproutConn) SendAncestry(reqs ...AncestryRequest) (MessageID, error) {
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(reqs), builder.String())
 }
 
-func (s *SproutConn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
+func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
 	id, _ := nodeId.MarshalText()
 	op := LeavesOf
 	return s.writeMessage(op, string(op)+formats[op], string(id), quantity)
@@ -154,7 +154,7 @@ func NodeLine(n forest.Node) string {
 	return fmt.Sprintf(nodeLineFormat, string(id), base64.URLEncoding.EncodeToString(data))
 }
 
-func (s *SproutConn) SendResponse(msgID MessageID, index int, nodes []forest.Node) (MessageID, error) {
+func (s *Conn) SendResponse(msgID MessageID, index int, nodes []forest.Node) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, n := range nodes {
 		builder.WriteString(NodeLine(n))
@@ -163,7 +163,7 @@ func (s *SproutConn) SendResponse(msgID MessageID, index int, nodes []forest.Nod
 	return s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", index, len(nodes), builder.String())
 }
 
-func (s *SproutConn) subscribeOp(op Verb, communities []*forest.Community) (MessageID, error) {
+func (s *Conn) subscribeOp(op Verb, communities []*forest.Community) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, community := range communities {
 		id, _ := community.ID().MarshalText()
@@ -173,11 +173,11 @@ func (s *SproutConn) subscribeOp(op Verb, communities []*forest.Community) (Mess
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(communities), builder.String())
 }
 
-func (s *SproutConn) SendSubscribe(communities []*forest.Community) (MessageID, error) {
+func (s *Conn) SendSubscribe(communities []*forest.Community) (MessageID, error) {
 	return s.subscribeOp(Subscribe, communities)
 }
 
-func (s *SproutConn) SendUnsubscribe(communities []*forest.Community) (MessageID, error) {
+func (s *Conn) SendUnsubscribe(communities []*forest.Community) (MessageID, error) {
 	return s.subscribeOp(Unsubscribe, communities)
 }
 
@@ -187,22 +187,22 @@ const (
 	ErrorMalformed ErrorCode = iota
 )
 
-func (s *SproutConn) SendError(targetMessageID MessageID, errorCode ErrorCode) (MessageID, error) {
+func (s *Conn) SendError(targetMessageID MessageID, errorCode ErrorCode) (MessageID, error) {
 	op := Error
 	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
 }
 
-func (s *SproutConn) SendErrorPart(targetMessageID MessageID, index int, errorCode ErrorCode) (MessageID, error) {
+func (s *Conn) SendErrorPart(targetMessageID MessageID, index int, errorCode ErrorCode) (MessageID, error) {
 	op := ErrorPart
 	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], index, errorCode)
 }
 
-func (s *SproutConn) SendOkPart(targetMessageID MessageID, index int) (MessageID, error) {
+func (s *Conn) SendOkPart(targetMessageID MessageID, index int) (MessageID, error) {
 	op := OkPart
 	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], index)
 }
 
-func (s *SproutConn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
+func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
 	builder := &strings.Builder{}
 	for _, node := range nodes {
 		id := node.ID()
@@ -218,7 +218,7 @@ func (s *SproutConn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), builder.String())
 }
 
-func (s *SproutConn) scanOp(verb Verb, fields ...interface{}) error {
+func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 	n, err := fmt.Fscanf(s.Conn, formats[verb], fields...)
 	if err != nil {
 		return fmt.Errorf("failed to scan %s: %v", verb, err)
@@ -228,7 +228,7 @@ func (s *SproutConn) scanOp(verb Verb, fields ...interface{}) error {
 	return nil
 }
 
-func (s *SproutConn) readMessage() error {
+func (s *Conn) ReadMessage() error {
 	var word string
 	n, err := fmt.Fscanf(s.Conn, "%s", &word)
 	if err != nil {
@@ -415,7 +415,7 @@ func (s *SproutConn) readMessage() error {
 	return nil
 }
 
-func (s *SproutConn) readNodeLines(count int) ([]forest.Node, error) {
+func (s *Conn) readNodeLines(count int) ([]forest.Node, error) {
 	nodes := make([]forest.Node, count)
 	for i := 0; i < count; i++ {
 		var (
@@ -446,7 +446,7 @@ func (s *SproutConn) readNodeLines(count int) ([]forest.Node, error) {
 	return nodes, nil
 }
 
-func (s *SproutConn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
+func (s *Conn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
 	ids := make([]*fields.QualifiedHash, count)
 	for i := 0; i < count; i++ {
 		var idString string
