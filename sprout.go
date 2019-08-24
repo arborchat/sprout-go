@@ -65,6 +65,7 @@ type SproutConn struct {
 	OnError       func(s *SproutConn, messageID MessageID, errorCode ErrorCode) error
 	OnErrorPart   func(s *SproutConn, messageID MessageID, index int, errorCode ErrorCode) error
 	OnOkPart      func(s *SproutConn, messageID MessageID, index int) error
+	OnAnnounce    func(s *SproutConn, messageID MessageID, nodes []forest.Node) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -331,32 +332,9 @@ func (s *SproutConn) readMessage() error {
 		if err := s.scanOp(verb, &targetMessageID, &index, &count); err != nil {
 			return err
 		}
-		nodes := make([]forest.Node, count)
-		for i := 0; i < count; i++ {
-			var (
-				idString   string
-				nodeString string
-			)
-			n, err := fmt.Fscanf(s.Conn, nodeLineFormat, &idString, &nodeString)
-			if err != nil {
-				return fmt.Errorf("error reading ancestry request line: %v", err)
-			} else if n != 2 {
-				return fmt.Errorf("unexpected number of items, expected %d found %d", 2, n)
-			}
-			id := &fields.QualifiedHash{}
-			if err := id.UnmarshalText([]byte(idString)); err != nil {
-				return fmt.Errorf("failed to unmarshal ancestry request line: %v", err)
-			}
-			node, err := NodeFromBase64(nodeString)
-			if err != nil {
-				return fmt.Errorf("failed to read node from response: %v", err)
-			}
-			if node.ID() != id {
-				expectedIDString, _ := id.MarshalText()
-				actualIDString, _ := node.ID().MarshalText()
-				return fmt.Errorf("message id mismatch, node given as %s hashes to %s", expectedIDString, actualIDString)
-			}
-			nodes[i] = node
+		nodes, err := s.readNodeLines(count)
+		if err != nil {
+			return fmt.Errorf("failed reading response node list: %v", err)
 		}
 		if err := s.OnResponse(s, targetMessageID, index, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -417,8 +395,55 @@ func (s *SproutConn) readMessage() error {
 		if err := s.OnOkPart(s, messageID, index); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
+	case Announce:
+		var (
+			messageID MessageID
+			count     int
+		)
+		if err := s.scanOp(verb, &messageID, &count); err != nil {
+			return err
+		}
+		nodes, err := s.readNodeLines(count)
+		if err != nil {
+			return fmt.Errorf("failed parsing announce node list: %v", err)
+		}
+
+		if err := s.OnAnnounce(s, messageID, nodes); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
 	}
 	return nil
+}
+
+func (s *SproutConn) readNodeLines(count int) ([]forest.Node, error) {
+	nodes := make([]forest.Node, count)
+	for i := 0; i < count; i++ {
+		var (
+			idString   string
+			nodeString string
+		)
+		n, err := fmt.Fscanf(s.Conn, nodeLineFormat, &idString, &nodeString)
+		if err != nil {
+			return nil, fmt.Errorf("error reading node line: %v", err)
+		} else if n != 2 {
+			return nil, fmt.Errorf("unexpected number of items, expected %d found %d", 2, n)
+		}
+		id := &fields.QualifiedHash{}
+		if err := id.UnmarshalText([]byte(idString)); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal node line: %v", err)
+		}
+		node, err := NodeFromBase64(nodeString)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read node: %v", err)
+		}
+		if node.ID() != id {
+			expectedIDString, _ := id.MarshalText()
+			actualIDString, _ := node.ID().MarshalText()
+			return nil, fmt.Errorf("message id mismatch, node given as %s hashes to %s", expectedIDString, actualIDString)
+		}
+		nodes[i] = node
+	}
+	return nodes, nil
 }
 
 func (s *SproutConn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
