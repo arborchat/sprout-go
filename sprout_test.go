@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"git.sr.ht/~whereswaldon/forest-go/fields"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 )
 
@@ -39,7 +40,7 @@ func (l LoopbackConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
-func TestVersionHook(t *testing.T) {
+func TestVersionMessage(t *testing.T) {
 	var (
 		outMajor    int
 		outMinor    int
@@ -72,5 +73,43 @@ func TestVersionHook(t *testing.T) {
 		t.Fatalf("major version mismatch, expected %d, got %d", sconn.Major, outMajor)
 	} else if sconn.Minor != outMinor {
 		t.Fatalf("minor version mismatch, expected %d, got %d", sconn.Minor, outMinor)
+	}
+}
+
+func TestQueryAnyMessage(t *testing.T) {
+	var (
+		inID, outID             sprout.MessageID
+		inNodeType, outNodeType fields.NodeType
+		inQuantity, outQuantity int
+		err                     error
+		sconn                   *sprout.Conn
+	)
+	inNodeType = fields.NodeTypeCommunity
+	inQuantity = 5
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnQueryAny = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
+		outID = m
+		outNodeType = nodeType
+		outQuantity = quantity
+		return nil
+	}
+	inID, err = sconn.SendQueryAny(inNodeType, inQuantity)
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if inNodeType != outNodeType {
+		t.Fatalf("node type mismatch, expected %d, got %d", inNodeType, outNodeType)
+	} else if inQuantity != outQuantity {
+		t.Fatalf("node type mismatch, expected %d, got %d", inQuantity, outQuantity)
 	}
 }
