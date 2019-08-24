@@ -57,6 +57,7 @@ type SproutConn struct {
 	OnVersion  func(s *SproutConn, messageID MessageID, major, minor int) error
 	OnQueryAny func(s *SproutConn, messageID MessageID, nodeType fields.NodeType, quantity int) error
 	OnQuery    func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnAncestry func(s *SproutConn, messageID MessageID, ancestryRequests []AncestryRequest) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -115,9 +116,11 @@ type AncestryRequest struct {
 	Levels int
 }
 
+const ancestryRequestLinePattern = "%d %s\n"
+
 func (r AncestryRequest) String() string {
 	b, _ := r.QualifiedHash.MarshalText()
-	return fmt.Sprintf("%d %s\n", r.Levels, string(b))
+	return fmt.Sprintf(ancestryRequestLinePattern, r.Levels, string(b))
 }
 
 func (s *SproutConn) SendAncestry(reqs ...AncestryRequest) (MessageID, error) {
@@ -274,7 +277,38 @@ func (s *SproutConn) readMessage() error {
 		if err := s.OnQuery(s, messageID, ids); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-
+	case Ancestry:
+		var (
+			messageID MessageID
+			count     int
+		)
+		if err := s.scanOp(verb, &messageID, &count); err != nil {
+			return err
+		}
+		ancestryRequests := make([]AncestryRequest, count)
+		for i := 0; i < count; i++ {
+			var (
+				idString string
+				depth    int
+			)
+			n, err := fmt.Fscanf(s.Conn, ancestryRequestLinePattern, &depth, &idString)
+			if err != nil {
+				return fmt.Errorf("error reading ancestry request line: %v", err)
+			} else if n != 2 {
+				return fmt.Errorf("unexpected number of items, expected %d found %d", 2, n)
+			}
+			id := &fields.QualifiedHash{}
+			if err := id.UnmarshalText([]byte(idString)); err != nil {
+				return fmt.Errorf("failed to unmarshal ancestry request line: %v", err)
+			}
+			ancestryRequests[i] = AncestryRequest{
+				QualifiedHash: id,
+				Levels:        depth,
+			}
+		}
+		if err := s.OnAncestry(s, messageID, ancestryRequests); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
 	}
 	return nil
 }
