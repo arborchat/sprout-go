@@ -58,6 +58,7 @@ type SproutConn struct {
 	OnQueryAny func(s *SproutConn, messageID MessageID, nodeType fields.NodeType, quantity int) error
 	OnQuery    func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
 	OnAncestry func(s *SproutConn, messageID MessageID, ancestryRequests []AncestryRequest) error
+	OnLeavesOf func(s *SproutConn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -307,6 +308,22 @@ func (s *SproutConn) readMessage() error {
 			}
 		}
 		if err := s.OnAncestry(s, messageID, ancestryRequests); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
+	case LeavesOf:
+		var (
+			messageID    MessageID
+			nodeIDString string
+			quantity     int
+		)
+		if err := s.scanOp(verb, &messageID, &nodeIDString, &quantity); err != nil {
+			return err
+		}
+		id := &fields.QualifiedHash{}
+		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
+			return fmt.Errorf("failed to unmarshal leave_of target: %v", err)
+		}
+		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	}
