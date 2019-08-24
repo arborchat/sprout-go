@@ -62,6 +62,9 @@ type SproutConn struct {
 	OnResponse    func(s *SproutConn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
 	OnSubscribe   func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
 	OnUnsubscribe func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnError       func(s *SproutConn, messageID MessageID, errorCode ErrorCode) error
+	OnErrorPart   func(s *SproutConn, messageID MessageID, index int, errorCode ErrorCode) error
+	OnOkPart      func(s *SproutConn, messageID MessageID, index int) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -378,6 +381,40 @@ func (s *SproutConn) readMessage() error {
 			hook = s.OnUnsubscribe
 		}
 		if err := hook(s, messageID, ids); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
+	case Error:
+		var (
+			errorCode ErrorCode
+			messageID MessageID
+		)
+		if err := s.scanOp(verb, &messageID, &errorCode); err != nil {
+			return err
+		}
+		if err := s.OnError(s, messageID, errorCode); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
+	case ErrorPart:
+		var (
+			errorCode ErrorCode
+			index     int
+			messageID MessageID
+		)
+		if err := s.scanOp(verb, &messageID, &index, &errorCode); err != nil {
+			return err
+		}
+		if err := s.OnErrorPart(s, messageID, index, errorCode); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
+	case OkPart:
+		var (
+			index     int
+			messageID MessageID
+		)
+		if err := s.scanOp(verb, &messageID, &index); err != nil {
+			return err
+		}
+		if err := s.OnOkPart(s, messageID, index); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	}
