@@ -54,12 +54,14 @@ type SproutConn struct {
 	Major, Minor  int
 	nextMessageID MessageID
 
-	OnVersion  func(s *SproutConn, messageID MessageID, major, minor int) error
-	OnQueryAny func(s *SproutConn, messageID MessageID, nodeType fields.NodeType, quantity int) error
-	OnQuery    func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnAncestry func(s *SproutConn, messageID MessageID, ancestryRequests []AncestryRequest) error
-	OnLeavesOf func(s *SproutConn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
-	OnResponse func(s *SproutConn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
+	OnVersion     func(s *SproutConn, messageID MessageID, major, minor int) error
+	OnQueryAny    func(s *SproutConn, messageID MessageID, nodeType fields.NodeType, quantity int) error
+	OnQuery       func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnAncestry    func(s *SproutConn, messageID MessageID, ancestryRequests []AncestryRequest) error
+	OnLeavesOf    func(s *SproutConn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
+	OnResponse    func(s *SproutConn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
+	OnSubscribe   func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
+	OnUnsubscribe func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -263,20 +265,9 @@ func (s *SproutConn) readMessage() error {
 		if err := s.scanOp(verb, &messageID, &count); err != nil {
 			return err
 		}
-		ids := make([]*fields.QualifiedHash, count)
-		for i := 0; i < count; i++ {
-			var idString string
-			n, err := fmt.Fscanln(s.Conn, &idString)
-			if err != nil {
-				return fmt.Errorf("error reading query id line: %v", err)
-			} else if n != 1 {
-				return fmt.Errorf("unexpected number of items, expected %d found %d", 1, n)
-			}
-			id := &fields.QualifiedHash{}
-			if err := id.UnmarshalText([]byte(idString)); err != nil {
-				return fmt.Errorf("failed to unmarshal query id line: %v", err)
-			}
-			ids[i] = id
+		ids, err := s.readNodeIDs(count)
+		if err != nil {
+			return fmt.Errorf("failed to read node ids in query message: %v", err)
 		}
 		if err := s.OnQuery(s, messageID, ids); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -367,8 +358,49 @@ func (s *SproutConn) readMessage() error {
 		if err := s.OnResponse(s, targetMessageID, index, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
+	case Subscribe:
+		fallthrough
+	case Unsubscribe:
+		var (
+			messageID MessageID
+			count     int
+		)
+		if err := s.scanOp(verb, &messageID, &count); err != nil {
+			return err
+		}
+
+		ids, err := s.readNodeIDs(count)
+		if err != nil {
+			return fmt.Errorf("failed to read community ids in %s message: %v", string(verb), err)
+		}
+		hook := s.OnSubscribe
+		if verb == Unsubscribe {
+			hook = s.OnUnsubscribe
+		}
+		if err := hook(s, messageID, ids); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
 	}
 	return nil
+}
+
+func (s *SproutConn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
+	ids := make([]*fields.QualifiedHash, count)
+	for i := 0; i < count; i++ {
+		var idString string
+		n, err := fmt.Fscanln(s.Conn, &idString)
+		if err != nil {
+			return nil, fmt.Errorf("error reading id line: %v", err)
+		} else if n != 1 {
+			return nil, fmt.Errorf("unexpected number of items, expected %d found %d", 1, n)
+		}
+		id := &fields.QualifiedHash{}
+		if err := id.UnmarshalText([]byte(idString)); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal id line: %v", err)
+		}
+		ids[i] = id
+	}
+	return ids, nil
 }
 
 func NodeFromBase64(in string) (forest.Node, error) {
