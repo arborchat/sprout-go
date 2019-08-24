@@ -59,6 +59,7 @@ type SproutConn struct {
 	OnQuery    func(s *SproutConn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
 	OnAncestry func(s *SproutConn, messageID MessageID, ancestryRequests []AncestryRequest) error
 	OnLeavesOf func(s *SproutConn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
+	OnResponse func(s *SproutConn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
 }
 
 func New(transport net.Conn) (*SproutConn, error) {
@@ -139,10 +140,12 @@ func (s *SproutConn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (M
 	return s.writeMessage(op, string(op)+formats[op], string(id), quantity)
 }
 
+const nodeLineFormat = "%s %s\n"
+
 func NodeLine(n forest.Node) string {
 	id, _ := n.ID().MarshalText()
 	data, _ := n.MarshalBinary()
-	return fmt.Sprintf("%s %s\n", string(id), base64.URLEncoding.EncodeToString(data))
+	return fmt.Sprintf(nodeLineFormat, string(id), base64.URLEncoding.EncodeToString(data))
 }
 
 func (s *SproutConn) SendResponse(msgID MessageID, index int, nodes []forest.Node) (MessageID, error) {
@@ -326,6 +329,57 @@ func (s *SproutConn) readMessage() error {
 		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
+	case Response:
+		var (
+			targetMessageID MessageID
+			index, count    int
+		)
+		if err := s.scanOp(verb, &targetMessageID, &index, &count); err != nil {
+			return err
+		}
+		nodes := make([]forest.Node, count)
+		for i := 0; i < count; i++ {
+			var (
+				idString   string
+				nodeString string
+			)
+			n, err := fmt.Fscanf(s.Conn, nodeLineFormat, &idString, &nodeString)
+			if err != nil {
+				return fmt.Errorf("error reading ancestry request line: %v", err)
+			} else if n != 2 {
+				return fmt.Errorf("unexpected number of items, expected %d found %d", 2, n)
+			}
+			id := &fields.QualifiedHash{}
+			if err := id.UnmarshalText([]byte(idString)); err != nil {
+				return fmt.Errorf("failed to unmarshal ancestry request line: %v", err)
+			}
+			node, err := NodeFromBase64(nodeString)
+			if err != nil {
+				return fmt.Errorf("failed to read node from response: %v", err)
+			}
+			if node.ID() != id {
+				expectedIDString, _ := id.MarshalText()
+				actualIDString, _ := node.ID().MarshalText()
+				return fmt.Errorf("message id mismatch, node given as %s hashes to %s", expectedIDString, actualIDString)
+			}
+			nodes[i] = node
+		}
+		if err := s.OnResponse(s, targetMessageID, index, nodes); err != nil {
+			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		}
 	}
 	return nil
+}
+
+func NodeFromBase64(in string) (forest.Node, error) {
+	b, err := base64.RawURLEncoding.DecodeString(in)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode node string: %v", err)
+	}
+	node, err := forest.UnmarshalBinaryNode(b)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal node from string: %v", err)
+	}
+	return node, nil
+
 }
