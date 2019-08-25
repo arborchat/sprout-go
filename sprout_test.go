@@ -355,3 +355,37 @@ func TestUnsubscribeMessage(t *testing.T) {
 		}
 	}
 }
+
+func TestErrorMessage(t *testing.T) {
+	var (
+		inID, outID     sprout.MessageID
+		inCode, outCode sprout.ErrorCode
+		err             error
+		sconn           *sprout.Conn
+	)
+	inID = 5
+	inCode = sprout.ErrorMalformed
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnError = func(s *sprout.Conn, target sprout.MessageID, code sprout.ErrorCode) error {
+		outID = target
+		outCode = code
+		return nil
+	}
+	inID, err = sconn.SendError(inID, inCode)
+	if err != nil {
+		t.Fatalf("failed to send error: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to send error: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if inCode != outCode {
+		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
+	}
+}
