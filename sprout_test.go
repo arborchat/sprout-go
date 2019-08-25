@@ -381,11 +381,84 @@ func TestErrorMessage(t *testing.T) {
 	}
 	err = sconn.ReadMessage()
 	if err != nil {
-		t.Fatalf("failed to send error: %v", err)
+		t.Fatalf("failed to read error: %v", err)
 	}
 	if inID != outID {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
 	} else if inCode != outCode {
 		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
+	}
+}
+
+func TestErrorPartMessage(t *testing.T) {
+	var (
+		inID, outID       sprout.MessageID
+		inCode, outCode   sprout.ErrorCode
+		inIndex, outIndex int
+		err               error
+		sconn             *sprout.Conn
+	)
+	inID = 5
+	inCode = sprout.ErrorMalformed
+	inIndex = 3
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnErrorPart = func(s *sprout.Conn, target sprout.MessageID, index int, code sprout.ErrorCode) error {
+		outID = target
+		outIndex = index
+		outCode = code
+		return nil
+	}
+	inID, err = sconn.SendErrorPart(inID, inIndex, inCode)
+	if err != nil {
+		t.Fatalf("failed to send error_part: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read error_part: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if inCode != outCode {
+		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
+	} else if inIndex != outIndex {
+		t.Fatalf("error index mismatch, expected %d, got %d", inIndex, outIndex)
+	}
+}
+
+func TestOkPartMessage(t *testing.T) {
+	var (
+		inID, outID       sprout.MessageID
+		inIndex, outIndex int
+		err               error
+		sconn             *sprout.Conn
+	)
+	inID = 5
+	inIndex = 3
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnOkPart = func(s *sprout.Conn, target sprout.MessageID, index int) error {
+		outID = target
+		outIndex = index
+		return nil
+	}
+	inID, err = sconn.SendOkPart(inID, inIndex)
+	if err != nil {
+		t.Fatalf("failed to send ok_part: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read ok_part: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if inIndex != outIndex {
+		t.Fatalf("index mismatch, expected %d, got %d", inIndex, outIndex)
 	}
 }

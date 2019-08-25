@@ -45,7 +45,7 @@ var formats = map[Verb]string{
 	Unsubscribe: " %d %d\n",
 	Error:       " %d %d\n",
 	ErrorPart:   " %d[%d] %d\n",
-	OkPart:      " %d[%d] %d\n",
+	OkPart:      " %d[%d]\n",
 	Announce:    " %d %d\n",
 }
 
