@@ -2,6 +2,7 @@ package sprout_test
 
 import (
 	"bytes"
+	"crypto/rand"
 	"net"
 	"testing"
 	"time"
@@ -111,5 +112,68 @@ func TestQueryAnyMessage(t *testing.T) {
 		t.Fatalf("node type mismatch, expected %d, got %d", inNodeType, outNodeType)
 	} else if inQuantity != outQuantity {
 		t.Fatalf("node type mismatch, expected %d, got %d", inQuantity, outQuantity)
+	}
+}
+
+func randomQualifiedHash() *fields.QualifiedHash {
+	length := 32
+	b := make([]byte, length)
+	_, _ = rand.Read(b)
+	return &fields.QualifiedHash{
+		Descriptor: fields.HashDescriptor{
+			Type:   fields.HashTypeSHA512,
+			Length: fields.ContentLength(length),
+		},
+		Blob: fields.Blob(b),
+	}
+
+}
+
+func randomQualifiedHashSlice(count int) []*fields.QualifiedHash {
+	out := make([]*fields.QualifiedHash, count)
+	for i := 0; i < count; i++ {
+		out[i] = randomQualifiedHash()
+	}
+	return out
+}
+
+func TestQueryMessage(t *testing.T) {
+	var (
+		inID, outID           sprout.MessageID
+		inNodeIDs, outNodeIDs []*fields.QualifiedHash
+		err                   error
+		sconn                 *sprout.Conn
+	)
+	inNodeIDs = randomQualifiedHashSlice(10)
+
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnQuery = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
+		outID = m
+		outNodeIDs = nodeIDs
+		return nil
+	}
+	inID, err = sconn.SendQuery(inNodeIDs...)
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if len(inNodeIDs) != len(outNodeIDs) {
+		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(outNodeIDs))
+	}
+	for i, n := range inNodeIDs {
+		if !n.Equals(outNodeIDs[i]) {
+			inString, _ := n.MarshalText()
+			outString, _ := outNodeIDs[i].MarshalText()
+			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
+		}
 	}
 }
