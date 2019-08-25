@@ -111,7 +111,7 @@ func TestQueryAnyMessage(t *testing.T) {
 	} else if inNodeType != outNodeType {
 		t.Fatalf("node type mismatch, expected %d, got %d", inNodeType, outNodeType)
 	} else if inQuantity != outQuantity {
-		t.Fatalf("node type mismatch, expected %d, got %d", inQuantity, outQuantity)
+		t.Fatalf("quantity mismatch, expected %d, got %d", inQuantity, outQuantity)
 	}
 }
 
@@ -232,5 +232,45 @@ func TestAncestryMessage(t *testing.T) {
 		} else if n.Levels != outReqs[i].Levels {
 			t.Fatalf("req level mismatch, expected %d got %d", n.Levels, outReqs[i].Levels)
 		}
+	}
+}
+
+func TestLeavesOfMessage(t *testing.T) {
+	var (
+		inID, outID             sprout.MessageID
+		inNodeID, outNodeID     *fields.QualifiedHash
+		inQuantity, outQuantity int
+		err                     error
+		sconn                   *sprout.Conn
+	)
+	inNodeID = randomQualifiedHash()
+	inQuantity = 5
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnLeavesOf = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
+		outID = m
+		outNodeID = nodeID
+		outQuantity = quantity
+		return nil
+	}
+	inID, err = sconn.SendLeavesOf(inNodeID, inQuantity)
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read query_any: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if !inNodeID.Equals(outNodeID) {
+		inString, _ := inNodeID.MarshalText()
+		outString, _ := outNodeID.MarshalText()
+		t.Fatalf("node id mismatch, expected %s, got %s", inString, outString)
+	} else if inQuantity != outQuantity {
+		t.Fatalf("quantity mismatch, expected %d, got %d", inQuantity, outQuantity)
 	}
 }
