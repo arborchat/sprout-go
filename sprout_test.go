@@ -2,7 +2,7 @@ package sprout_test
 
 import (
 	"bytes"
-	"crypto/rand"
+	"math/rand"
 	"net"
 	"testing"
 	"time"
@@ -104,7 +104,7 @@ func TestQueryAnyMessage(t *testing.T) {
 	}
 	err = sconn.ReadMessage()
 	if err != nil {
-		t.Fatalf("failed to send query_any: %v", err)
+		t.Fatalf("failed to read query_any: %v", err)
 	}
 	if inID != outID {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
@@ -126,13 +126,27 @@ func randomQualifiedHash() *fields.QualifiedHash {
 		},
 		Blob: fields.Blob(b),
 	}
+}
 
+func randomAncestryRequest() sprout.AncestryRequest {
+	return sprout.AncestryRequest{
+		QualifiedHash: randomQualifiedHash(),
+		Levels:        int(rand.Uint32()),
+	}
 }
 
 func randomQualifiedHashSlice(count int) []*fields.QualifiedHash {
 	out := make([]*fields.QualifiedHash, count)
 	for i := 0; i < count; i++ {
 		out[i] = randomQualifiedHash()
+	}
+	return out
+}
+
+func randomAncestryRequestSlice(count int) []sprout.AncestryRequest {
+	out := make([]sprout.AncestryRequest, count)
+	for i := 0; i < count; i++ {
+		out[i] = randomAncestryRequest()
 	}
 	return out
 }
@@ -158,11 +172,11 @@ func TestQueryMessage(t *testing.T) {
 	}
 	inID, err = sconn.SendQuery(inNodeIDs...)
 	if err != nil {
-		t.Fatalf("failed to send query_any: %v", err)
+		t.Fatalf("failed to send query: %v", err)
 	}
 	err = sconn.ReadMessage()
 	if err != nil {
-		t.Fatalf("failed to send query_any: %v", err)
+		t.Fatalf("failed to read query: %v", err)
 	}
 	if inID != outID {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
@@ -174,6 +188,49 @@ func TestQueryMessage(t *testing.T) {
 			inString, _ := n.MarshalText()
 			outString, _ := outNodeIDs[i].MarshalText()
 			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
+		}
+	}
+}
+
+func TestAncestryMessage(t *testing.T) {
+	var (
+		inID, outID     sprout.MessageID
+		inReqs, outReqs []sprout.AncestryRequest
+		err             error
+		sconn           *sprout.Conn
+	)
+	inReqs = randomAncestryRequestSlice(10)
+
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, reqs []sprout.AncestryRequest) error {
+		outID = m
+		outReqs = reqs
+		return nil
+	}
+	inID, err = sconn.SendAncestry(inReqs...)
+	if err != nil {
+		t.Fatalf("failed to send ancestry: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read ancestry: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if len(inReqs) != len(outReqs) {
+		t.Fatalf("request list length mismatch, expected %d, got %d", len(inReqs), len(outReqs))
+	}
+	for i, n := range inReqs {
+		if !n.QualifiedHash.Equals(outReqs[i].QualifiedHash) {
+			inString, _ := n.MarshalText()
+			outString, _ := outReqs[i].MarshalText()
+			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
+		} else if n.Levels != outReqs[i].Levels {
+			t.Fatalf("req level mismatch, expected %d got %d", n.Levels, outReqs[i].Levels)
 		}
 	}
 }
