@@ -274,3 +274,84 @@ func TestLeavesOfMessage(t *testing.T) {
 		t.Fatalf("quantity mismatch, expected %d, got %d", inQuantity, outQuantity)
 	}
 }
+
+func TestSubscribeMessage(t *testing.T) {
+	var (
+		inID, outID           sprout.MessageID
+		inNodeIDs, outNodeIDs []*fields.QualifiedHash
+		err                   error
+		sconn                 *sprout.Conn
+	)
+	inNodeIDs = randomQualifiedHashSlice(10)
+
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
+		outID = m
+		outNodeIDs = nodeIDs
+		return nil
+	}
+	inID, err = sconn.SendSubscribeByID(inNodeIDs...)
+	if err != nil {
+		t.Fatalf("failed to send subscribe: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read subscribe: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if len(inNodeIDs) != len(outNodeIDs) {
+		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(outNodeIDs))
+	}
+	for i, n := range inNodeIDs {
+		if !n.Equals(outNodeIDs[i]) {
+			inString, _ := n.MarshalText()
+			outString, _ := outNodeIDs[i].MarshalText()
+			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
+		}
+	}
+}
+func TestUnsubscribeMessage(t *testing.T) {
+	var (
+		inID, outID           sprout.MessageID
+		inNodeIDs, outNodeIDs []*fields.QualifiedHash
+		err                   error
+		sconn                 *sprout.Conn
+	)
+	inNodeIDs = randomQualifiedHashSlice(10)
+
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnUnsubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
+		outID = m
+		outNodeIDs = nodeIDs
+		return nil
+	}
+	inID, err = sconn.SendUnsubscribeByID(inNodeIDs...)
+	if err != nil {
+		t.Fatalf("failed to send unsubscribe: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read unsubscribe: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if len(inNodeIDs) != len(outNodeIDs) {
+		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(outNodeIDs))
+	}
+	for i, n := range inNodeIDs {
+		if !n.Equals(outNodeIDs[i]) {
+			inString, _ := n.MarshalText()
+			outString, _ := outNodeIDs[i].MarshalText()
+			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
+		}
+	}
+}

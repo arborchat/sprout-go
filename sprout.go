@@ -164,27 +164,45 @@ func (s *Conn) SendResponse(msgID MessageID, index int, nodes []forest.Node) (Me
 }
 
 func (s *Conn) subscribeOp(op Verb, communities []*forest.Community) (MessageID, error) {
+	ids := make([]*fields.QualifiedHash, len(communities))
+	for i, c := range communities {
+		ids[i] = c.ID()
+	}
+	return s.subscribeOpID(op, ids)
+}
+
+func (s *Conn) subscribeOpID(op Verb, communities []*fields.QualifiedHash) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, community := range communities {
-		id, _ := community.ID().MarshalText()
+		id, _ := community.MarshalText()
 		builder.WriteString(string(id))
 		builder.WriteString("\n")
 	}
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(communities), builder.String())
 }
 
-func (s *Conn) SendSubscribe(communities []*forest.Community) (MessageID, error) {
+func (s *Conn) SendSubscribe(communities ...*forest.Community) (MessageID, error) {
 	return s.subscribeOp(Subscribe, communities)
 }
 
-func (s *Conn) SendUnsubscribe(communities []*forest.Community) (MessageID, error) {
+func (s *Conn) SendUnsubscribe(communities ...*forest.Community) (MessageID, error) {
 	return s.subscribeOp(Unsubscribe, communities)
+}
+
+func (s *Conn) SendSubscribeByID(communities ...*fields.QualifiedHash) (MessageID, error) {
+	return s.subscribeOpID(Subscribe, communities)
+}
+
+func (s *Conn) SendUnsubscribeByID(communities ...*fields.QualifiedHash) (MessageID, error) {
+	return s.subscribeOpID(Unsubscribe, communities)
 }
 
 type ErrorCode int
 
 const (
 	ErrorMalformed ErrorCode = iota
+	ErrorProtocolTooOld
+	ErrorProtocolTooNew
 )
 
 func (s *Conn) SendError(targetMessageID MessageID, errorCode ErrorCode) (MessageID, error) {
