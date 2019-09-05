@@ -196,6 +196,7 @@ func TestAncestryMessage(t *testing.T) {
 	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
 		outID = m
 		outNodeID = nodeID
+		outLevels = levels
 		return nil
 	}
 	inID, err = sconn.SendAncestry(inNodeID, inLevels)

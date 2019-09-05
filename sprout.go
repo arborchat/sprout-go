@@ -308,9 +308,8 @@ func (s *Conn) ReadMessage() error {
 		var (
 			messageID    MessageID
 			nodeIDString string
-			count        int
 		)
-		if err := s.scanOp(verb, &messageID, &count); err != nil {
+		if err := s.scanOp(verb, &messageID, &nodeIDString); err != nil {
 			return err
 		}
 		id := &fields.QualifiedHash{}
