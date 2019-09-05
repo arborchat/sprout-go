@@ -92,13 +92,13 @@ func TestQueryAnyMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
-	sconn.OnQueryAny = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
+	sconn.OnList = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
 		outID = m
 		outNodeType = nodeType
 		outQuantity = quantity
 		return nil
 	}
-	inID, err = sconn.SendQueryAny(inNodeType, inQuantity)
+	inID, err = sconn.SendList(inNodeType, inQuantity)
 	if err != nil {
 		t.Fatalf("failed to send query_any: %v", err)
 	}
@@ -128,25 +128,10 @@ func randomQualifiedHash() *fields.QualifiedHash {
 	}
 }
 
-func randomAncestryRequest() sprout.AncestryRequest {
-	return sprout.AncestryRequest{
-		QualifiedHash: randomQualifiedHash(),
-		Levels:        int(rand.Uint32()),
-	}
-}
-
 func randomQualifiedHashSlice(count int) []*fields.QualifiedHash {
 	out := make([]*fields.QualifiedHash, count)
 	for i := 0; i < count; i++ {
 		out[i] = randomQualifiedHash()
-	}
-	return out
-}
-
-func randomAncestryRequestSlice(count int) []sprout.AncestryRequest {
-	out := make([]sprout.AncestryRequest, count)
-	for i := 0; i < count; i++ {
-		out[i] = randomAncestryRequest()
 	}
 	return out
 }
@@ -194,24 +179,26 @@ func TestQueryMessage(t *testing.T) {
 
 func TestAncestryMessage(t *testing.T) {
 	var (
-		inID, outID     sprout.MessageID
-		inReqs, outReqs []sprout.AncestryRequest
-		err             error
-		sconn           *sprout.Conn
+		inID, outID         sprout.MessageID
+		inNodeID, outNodeID *fields.QualifiedHash
+		inLevels, outLevels int
+		err                 error
+		sconn               *sprout.Conn
 	)
-	inReqs = randomAncestryRequestSlice(10)
+	inNodeID = randomQualifiedHash()
+	inLevels = 5
 
 	conn := new(LoopbackConn)
 	sconn, err = sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
-	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, reqs []sprout.AncestryRequest) error {
+	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
 		outID = m
-		outReqs = reqs
+		outNodeID = nodeID
 		return nil
 	}
-	inID, err = sconn.SendAncestry(inReqs...)
+	inID, err = sconn.SendAncestry(inNodeID, inLevels)
 	if err != nil {
 		t.Fatalf("failed to send ancestry: %v", err)
 	}
@@ -221,17 +208,13 @@ func TestAncestryMessage(t *testing.T) {
 	}
 	if inID != outID {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if len(inReqs) != len(outReqs) {
-		t.Fatalf("request list length mismatch, expected %d, got %d", len(inReqs), len(outReqs))
+	} else if inLevels != outLevels {
+		t.Fatalf("levels mismatch, expected %d, got %d", inLevels, outLevels)
 	}
-	for i, n := range inReqs {
-		if !n.QualifiedHash.Equals(outReqs[i].QualifiedHash) {
-			inString, _ := n.MarshalText()
-			outString, _ := outReqs[i].MarshalText()
-			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
-		} else if n.Levels != outReqs[i].Levels {
-			t.Fatalf("req level mismatch, expected %d got %d", n.Levels, outReqs[i].Levels)
-		}
+	if !inNodeID.Equals(outNodeID) {
+		inString, _ := inNodeID.MarshalText()
+		outString, _ := outNodeID.MarshalText()
+		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
 	}
 }
 
@@ -277,24 +260,24 @@ func TestLeavesOfMessage(t *testing.T) {
 
 func TestSubscribeMessage(t *testing.T) {
 	var (
-		inID, outID           sprout.MessageID
-		inNodeIDs, outNodeIDs []*fields.QualifiedHash
-		err                   error
-		sconn                 *sprout.Conn
+		inID, outID         sprout.MessageID
+		inNodeID, outNodeID *fields.QualifiedHash
+		err                 error
+		sconn               *sprout.Conn
 	)
-	inNodeIDs = randomQualifiedHashSlice(10)
+	inNodeID = randomQualifiedHash()
 
 	conn := new(LoopbackConn)
 	sconn, err = sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
-	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
+	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
 		outID = m
-		outNodeIDs = nodeIDs
+		outNodeID = nodeID
 		return nil
 	}
-	inID, err = sconn.SendSubscribeByID(inNodeIDs...)
+	inID, err = sconn.SendSubscribeByID(inNodeID)
 	if err != nil {
 		t.Fatalf("failed to send subscribe: %v", err)
 	}
@@ -304,37 +287,34 @@ func TestSubscribeMessage(t *testing.T) {
 	}
 	if inID != outID {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if len(inNodeIDs) != len(outNodeIDs) {
-		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(outNodeIDs))
 	}
-	for i, n := range inNodeIDs {
-		if !n.Equals(outNodeIDs[i]) {
-			inString, _ := n.MarshalText()
-			outString, _ := outNodeIDs[i].MarshalText()
-			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
-		}
+	if !inNodeID.Equals(outNodeID) {
+		inString, _ := inNodeID.MarshalText()
+		outString, _ := outNodeID.MarshalText()
+		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
 	}
 }
+
 func TestUnsubscribeMessage(t *testing.T) {
 	var (
-		inID, outID           sprout.MessageID
-		inNodeIDs, outNodeIDs []*fields.QualifiedHash
-		err                   error
-		sconn                 *sprout.Conn
+		inID, outID         sprout.MessageID
+		inNodeID, outNodeID *fields.QualifiedHash
+		err                 error
+		sconn               *sprout.Conn
 	)
-	inNodeIDs = randomQualifiedHashSlice(10)
+	inNodeID = randomQualifiedHash()
 
 	conn := new(LoopbackConn)
 	sconn, err = sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
-	sconn.OnUnsubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
+	sconn.OnUnsubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
 		outID = m
-		outNodeIDs = nodeIDs
+		outNodeID = nodeID
 		return nil
 	}
-	inID, err = sconn.SendUnsubscribeByID(inNodeIDs...)
+	inID, err = sconn.SendUnsubscribeByID(inNodeID)
 	if err != nil {
 		t.Fatalf("failed to send unsubscribe: %v", err)
 	}
@@ -344,22 +324,18 @@ func TestUnsubscribeMessage(t *testing.T) {
 	}
 	if inID != outID {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if len(inNodeIDs) != len(outNodeIDs) {
-		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(outNodeIDs))
 	}
-	for i, n := range inNodeIDs {
-		if !n.Equals(outNodeIDs[i]) {
-			inString, _ := n.MarshalText()
-			outString, _ := outNodeIDs[i].MarshalText()
-			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
-		}
+	if !inNodeID.Equals(outNodeID) {
+		inString, _ := inNodeID.MarshalText()
+		outString, _ := outNodeID.MarshalText()
+		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
 	}
 }
 
 func TestErrorMessage(t *testing.T) {
 	var (
 		inID, outID     sprout.MessageID
-		inCode, outCode sprout.ErrorCode
+		inCode, outCode sprout.StatusCode
 		err             error
 		sconn           *sprout.Conn
 	)
@@ -370,12 +346,12 @@ func TestErrorMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
-	sconn.OnError = func(s *sprout.Conn, target sprout.MessageID, code sprout.ErrorCode) error {
+	sconn.OnStatus = func(s *sprout.Conn, target sprout.MessageID, code sprout.StatusCode) error {
 		outID = target
 		outCode = code
 		return nil
 	}
-	inID, err = sconn.SendError(inID, inCode)
+	inID, err = sconn.SendStatus(inID, inCode)
 	if err != nil {
 		t.Fatalf("failed to send error: %v", err)
 	}
@@ -387,78 +363,5 @@ func TestErrorMessage(t *testing.T) {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
 	} else if inCode != outCode {
 		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
-	}
-}
-
-func TestErrorPartMessage(t *testing.T) {
-	var (
-		inID, outID       sprout.MessageID
-		inCode, outCode   sprout.ErrorCode
-		inIndex, outIndex int
-		err               error
-		sconn             *sprout.Conn
-	)
-	inID = 5
-	inCode = sprout.ErrorMalformed
-	inIndex = 3
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
-	sconn.OnErrorPart = func(s *sprout.Conn, target sprout.MessageID, index int, code sprout.ErrorCode) error {
-		outID = target
-		outIndex = index
-		outCode = code
-		return nil
-	}
-	inID, err = sconn.SendErrorPart(inID, inIndex, inCode)
-	if err != nil {
-		t.Fatalf("failed to send error_part: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read error_part: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if inCode != outCode {
-		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
-	} else if inIndex != outIndex {
-		t.Fatalf("error index mismatch, expected %d, got %d", inIndex, outIndex)
-	}
-}
-
-func TestOkPartMessage(t *testing.T) {
-	var (
-		inID, outID       sprout.MessageID
-		inIndex, outIndex int
-		err               error
-		sconn             *sprout.Conn
-	)
-	inID = 5
-	inIndex = 3
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
-	sconn.OnOkPart = func(s *sprout.Conn, target sprout.MessageID, index int) error {
-		outID = target
-		outIndex = index
-		return nil
-	}
-	inID, err = sconn.SendOkPart(inID, inIndex)
-	if err != nil {
-		t.Fatalf("failed to send ok_part: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read ok_part: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if inIndex != outIndex {
-		t.Fatalf("index mismatch, expected %d, got %d", inIndex, outIndex)
 	}
 }
