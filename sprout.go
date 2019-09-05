@@ -21,32 +21,28 @@ type Verb string
 
 const (
 	Version     Verb = "version"
-	QueryAny    Verb = "query_any"
+	List        Verb = "list"
 	Query       Verb = "query"
 	Ancestry    Verb = "ancestry"
 	LeavesOf    Verb = "leaves_of"
-	Response    Verb = "response"
 	Subscribe   Verb = "subscribe"
 	Unsubscribe Verb = "unsubscribe"
-	Error       Verb = "error"
-	ErrorPart   Verb = "error_part"
-	OkPart      Verb = "ok_part"
 	Announce    Verb = "announce"
+	Response    Verb = "response"
+	Status      Verb = "error"
 )
 
 var formats = map[Verb]string{
 	Version:     " %d %d.%d\n",
-	QueryAny:    " %d %d %d\n",
+	List:        " %d %d %d\n",
 	Query:       " %d %d\n",
-	Ancestry:    " %d %d\n",
+	Ancestry:    " %d %s %d\n",
 	LeavesOf:    " %d %s %d\n",
-	Response:    " %d[%d] %d\n",
-	Subscribe:   " %d %d\n",
-	Unsubscribe: " %d %d\n",
-	Error:       " %d %d\n",
-	ErrorPart:   " %d[%d] %d\n",
-	OkPart:      " %d[%d]\n",
+	Subscribe:   " %d %s\n",
+	Unsubscribe: " %d %s\n",
 	Announce:    " %d %d\n",
+	Response:    " %d %d\n",
+	Status:      " %d %d\n",
 }
 
 type Conn struct {
@@ -55,16 +51,14 @@ type Conn struct {
 	nextMessageID MessageID
 
 	OnVersion     func(s *Conn, messageID MessageID, major, minor int) error
-	OnQueryAny    func(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error
+	OnList        func(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error
 	OnQuery       func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnAncestry    func(s *Conn, messageID MessageID, ancestryRequests []AncestryRequest) error
+	OnAncestry    func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, levels int) error
 	OnLeavesOf    func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
-	OnResponse    func(s *Conn, targetMessageID MessageID, targetIndex int, nodes []forest.Node) error
-	OnSubscribe   func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnUnsubscribe func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
-	OnError       func(s *Conn, messageID MessageID, errorCode ErrorCode) error
-	OnErrorPart   func(s *Conn, messageID MessageID, index int, errorCode ErrorCode) error
-	OnOkPart      func(s *Conn, messageID MessageID, index int) error
+	OnResponse    func(s *Conn, targetMessageID MessageID, nodes []forest.Node) error
+	OnSubscribe   func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) error
+	OnUnsubscribe func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) error
+	OnStatus      func(s *Conn, messageID MessageID, code StatusCode) error
 	OnAnnounce    func(s *Conn, messageID MessageID, nodes []forest.Node) error
 }
 
@@ -103,8 +97,8 @@ func (s *Conn) SendVersion() (MessageID, error) {
 	return s.writeMessage(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
-func (s *Conn) SendQueryAny(nodeType fields.NodeType, quantity int) (MessageID, error) {
-	op := QueryAny
+func (s *Conn) SendList(nodeType fields.NodeType, quantity int) (MessageID, error) {
+	op := List
 	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)
 }
 
@@ -119,25 +113,10 @@ func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), builder.String())
 }
 
-type AncestryRequest struct {
-	*fields.QualifiedHash
-	Levels int
-}
-
-const ancestryRequestLinePattern = "%d %s\n"
-
-func (r AncestryRequest) String() string {
-	b, _ := r.QualifiedHash.MarshalText()
-	return fmt.Sprintf(ancestryRequestLinePattern, r.Levels, string(b))
-}
-
-func (s *Conn) SendAncestry(reqs ...AncestryRequest) (MessageID, error) {
-	builder := &strings.Builder{}
-	for _, req := range reqs {
-		builder.WriteString(req.String())
-	}
+func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID, error) {
+	id, _ := nodeID.MarshalText()
 	op := Ancestry
-	return s.writeMessage(op, string(op)+formats[op]+"%s", len(reqs), builder.String())
+	return s.writeMessage(op, string(op)+formats[op], id, levels)
 }
 
 func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
@@ -154,70 +133,51 @@ func NodeLine(n forest.Node) string {
 	return fmt.Sprintf(nodeLineFormat, string(id), base64.URLEncoding.EncodeToString(data))
 }
 
-func (s *Conn) SendResponse(msgID MessageID, index int, nodes []forest.Node) (MessageID, error) {
+func (s *Conn) SendResponse(msgID MessageID, nodes []forest.Node) (MessageID, error) {
 	builder := &strings.Builder{}
 	for _, n := range nodes {
 		builder.WriteString(NodeLine(n))
 	}
 	op := Response
-	return s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", index, len(nodes), builder.String())
+	return s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", len(nodes), builder.String())
 }
 
-func (s *Conn) subscribeOp(op Verb, communities []*forest.Community) (MessageID, error) {
-	ids := make([]*fields.QualifiedHash, len(communities))
-	for i, c := range communities {
-		ids[i] = c.ID()
-	}
-	return s.subscribeOpID(op, ids)
+func (s *Conn) subscribeOp(op Verb, community *forest.Community) (MessageID, error) {
+	return s.subscribeOpID(op, community.ID())
 }
 
-func (s *Conn) subscribeOpID(op Verb, communities []*fields.QualifiedHash) (MessageID, error) {
-	builder := &strings.Builder{}
-	for _, community := range communities {
-		id, _ := community.MarshalText()
-		builder.WriteString(string(id))
-		builder.WriteString("\n")
-	}
-	return s.writeMessage(op, string(op)+formats[op]+"%s", len(communities), builder.String())
+func (s *Conn) subscribeOpID(op Verb, community *fields.QualifiedHash) (MessageID, error) {
+	id, _ := community.MarshalText()
+	return s.writeMessage(op, string(op)+formats[op], id)
 }
 
-func (s *Conn) SendSubscribe(communities ...*forest.Community) (MessageID, error) {
-	return s.subscribeOp(Subscribe, communities)
+func (s *Conn) SendSubscribe(community *forest.Community) (MessageID, error) {
+	return s.subscribeOp(Subscribe, community)
 }
 
-func (s *Conn) SendUnsubscribe(communities ...*forest.Community) (MessageID, error) {
-	return s.subscribeOp(Unsubscribe, communities)
+func (s *Conn) SendUnsubscribe(community *forest.Community) (MessageID, error) {
+	return s.subscribeOp(Unsubscribe, community)
 }
 
-func (s *Conn) SendSubscribeByID(communities ...*fields.QualifiedHash) (MessageID, error) {
-	return s.subscribeOpID(Subscribe, communities)
+func (s *Conn) SendSubscribeByID(community *fields.QualifiedHash) (MessageID, error) {
+	return s.subscribeOpID(Subscribe, community)
 }
 
-func (s *Conn) SendUnsubscribeByID(communities ...*fields.QualifiedHash) (MessageID, error) {
-	return s.subscribeOpID(Unsubscribe, communities)
+func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash) (MessageID, error) {
+	return s.subscribeOpID(Unsubscribe, community)
 }
 
-type ErrorCode int
+type StatusCode int
 
 const (
-	ErrorMalformed ErrorCode = iota
+	ErrorMalformed StatusCode = iota
 	ErrorProtocolTooOld
 	ErrorProtocolTooNew
 )
 
-func (s *Conn) SendError(targetMessageID MessageID, errorCode ErrorCode) (MessageID, error) {
-	op := Error
+func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) (MessageID, error) {
+	op := Status
 	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
-}
-
-func (s *Conn) SendErrorPart(targetMessageID MessageID, index int, errorCode ErrorCode) (MessageID, error) {
-	op := ErrorPart
-	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], index, errorCode)
-}
-
-func (s *Conn) SendOkPart(targetMessageID MessageID, index int) (MessageID, error) {
-	op := OkPart
-	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], index)
 }
 
 func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
@@ -267,7 +227,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnVersion(s, messageID, major, minor); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case QueryAny:
+	case List:
 		var (
 			messageID MessageID
 			nodeType  fields.NodeType
@@ -276,7 +236,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.scanOp(verb, &messageID, &nodeType, &quantity); err != nil {
 			return err
 		}
-		if err := s.OnQueryAny(s, messageID, nodeType, quantity); err != nil {
+		if err := s.OnList(s, messageID, nodeType, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	case Query:
@@ -296,34 +256,19 @@ func (s *Conn) ReadMessage() error {
 		}
 	case Ancestry:
 		var (
-			messageID MessageID
-			count     int
+			messageID    MessageID
+			nodeIDString string
+			levels       int
 		)
-		if err := s.scanOp(verb, &messageID, &count); err != nil {
+		if err := s.scanOp(verb, &messageID, &nodeIDString, &levels); err != nil {
 			return err
 		}
-		ancestryRequests := make([]AncestryRequest, count)
-		for i := 0; i < count; i++ {
-			var (
-				idString string
-				depth    int
-			)
-			n, err := fmt.Fscanf(s.Conn, ancestryRequestLinePattern, &depth, &idString)
-			if err != nil {
-				return fmt.Errorf("error reading ancestry request line: %v", err)
-			} else if n != 2 {
-				return fmt.Errorf("unexpected number of items, expected %d found %d", 2, n)
-			}
-			id := &fields.QualifiedHash{}
-			if err := id.UnmarshalText([]byte(idString)); err != nil {
-				return fmt.Errorf("failed to unmarshal ancestry request line: %v", err)
-			}
-			ancestryRequests[i] = AncestryRequest{
-				QualifiedHash: id,
-				Levels:        depth,
-			}
+		id := &fields.QualifiedHash{}
+		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
+			return fmt.Errorf("failed to unmarshal ancestry target: %v", err)
 		}
-		if err := s.OnAncestry(s, messageID, ancestryRequests); err != nil {
+
+		if err := s.OnAncestry(s, messageID, id, levels); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	case LeavesOf:
@@ -337,7 +282,7 @@ func (s *Conn) ReadMessage() error {
 		}
 		id := &fields.QualifiedHash{}
 		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
-			return fmt.Errorf("failed to unmarshal leave_of target: %v", err)
+			return fmt.Errorf("failed to unmarshal leaves_of target: %v", err)
 		}
 		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -345,72 +290,50 @@ func (s *Conn) ReadMessage() error {
 	case Response:
 		var (
 			targetMessageID MessageID
-			index, count    int
+			count           int
 		)
-		if err := s.scanOp(verb, &targetMessageID, &index, &count); err != nil {
+		if err := s.scanOp(verb, &targetMessageID, &count); err != nil {
 			return err
 		}
 		nodes, err := s.readNodeLines(count)
 		if err != nil {
 			return fmt.Errorf("failed reading response node list: %v", err)
 		}
-		if err := s.OnResponse(s, targetMessageID, index, nodes); err != nil {
+		if err := s.OnResponse(s, targetMessageID, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	case Subscribe:
 		fallthrough
 	case Unsubscribe:
 		var (
-			messageID MessageID
-			count     int
+			messageID    MessageID
+			nodeIDString string
+			count        int
 		)
 		if err := s.scanOp(verb, &messageID, &count); err != nil {
 			return err
 		}
-
-		ids, err := s.readNodeIDs(count)
-		if err != nil {
-			return fmt.Errorf("failed to read community ids in %s message: %v", string(verb), err)
+		id := &fields.QualifiedHash{}
+		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
+			return fmt.Errorf("failed to unmarshal %s target: %v", verb, err)
 		}
+
 		hook := s.OnSubscribe
 		if verb == Unsubscribe {
 			hook = s.OnUnsubscribe
 		}
-		if err := hook(s, messageID, ids); err != nil {
+		if err := hook(s, messageID, id); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case Error:
+	case Status:
 		var (
-			errorCode ErrorCode
+			errorCode StatusCode
 			messageID MessageID
 		)
 		if err := s.scanOp(verb, &messageID, &errorCode); err != nil {
 			return err
 		}
-		if err := s.OnError(s, messageID, errorCode); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
-		}
-	case ErrorPart:
-		var (
-			errorCode ErrorCode
-			index     int
-			messageID MessageID
-		)
-		if err := s.scanOp(verb, &messageID, &index, &errorCode); err != nil {
-			return err
-		}
-		if err := s.OnErrorPart(s, messageID, index, errorCode); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
-		}
-	case OkPart:
-		var (
-			index     int
-			messageID MessageID
-		)
-		if err := s.scanOp(verb, &messageID, &index); err != nil {
-			return err
-		}
-		if err := s.OnOkPart(s, messageID, index); err != nil {
+		if err := s.OnStatus(s, messageID, errorCode); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
 	case Announce:
