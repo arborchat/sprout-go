@@ -22,5 +22,5 @@ tasks:
       ~/go/bin/annotatego -v -T git.sr.ht/~whereswaldon/sprout-go... > annotations.json
       ../upload-annotations annotations.json whereswaldon sprout-go
   - mirror_to_github: |
-      cd forest-go
+      cd sprout-go
       ./.builds/mirror.sh "$github_mirror_url"
