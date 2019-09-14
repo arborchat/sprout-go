@@ -12,7 +12,7 @@ import (
 
 const (
 	CurrentMajor = 0
-	CurrentMinor = 1
+	CurrentMinor = 0
 )
 
 type MessageID int
