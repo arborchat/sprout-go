@@ -2,12 +2,15 @@ package sprout_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"math/rand"
 	"net"
 	"testing"
 	"time"
 
+	forest "git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
+	"git.sr.ht/~whereswaldon/forest-go/testkeys"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 )
 
@@ -117,14 +120,12 @@ func TestQueryAnyMessage(t *testing.T) {
 
 func randomQualifiedHash() *fields.QualifiedHash {
 	length := 32
-	b := make([]byte, length)
-	_, _ = rand.Read(b)
 	return &fields.QualifiedHash{
 		Descriptor: fields.HashDescriptor{
 			Type:   fields.HashTypeSHA512,
 			Length: fields.ContentLength(length),
 		},
-		Blob: fields.Blob(b),
+		Blob: fields.Blob(randomBytes(length)),
 	}
 }
 
@@ -134,6 +135,27 @@ func randomQualifiedHashSlice(count int) []*fields.QualifiedHash {
 		out[i] = randomQualifiedHash()
 	}
 	return out
+}
+
+func randomBytes(length int) []byte {
+	b := make([]byte, length)
+	_, _ = rand.Read(b)
+	return b
+}
+
+func randomString(length int) string {
+	return string(base64.StdEncoding.EncodeToString(randomBytes(length)))
+}
+
+func randomIdentity(t *testing.T) *forest.Identity {
+	signer := testkeys.Signer(t, testkeys.PrivKey1)
+	name := randomString(12)
+	id, err := forest.NewIdentity(signer, name, "")
+	if err != nil {
+		t.Errorf("Failed to generate test identity: %v", err)
+		return nil
+	}
+	return id
 }
 
 func TestQueryMessage(t *testing.T) {
@@ -333,7 +355,7 @@ func TestUnsubscribeMessage(t *testing.T) {
 	}
 }
 
-func TestErrorMessage(t *testing.T) {
+func TestStatusMessage(t *testing.T) {
 	var (
 		inID, outID     sprout.MessageID
 		inCode, outCode sprout.StatusCode
@@ -352,7 +374,7 @@ func TestErrorMessage(t *testing.T) {
 		outCode = code
 		return nil
 	}
-	inID, err = sconn.SendStatus(inID, inCode)
+	err = sconn.SendStatus(inID, inCode)
 	if err != nil {
 		t.Fatalf("failed to send error: %v", err)
 	}
@@ -364,5 +386,47 @@ func TestErrorMessage(t *testing.T) {
 		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
 	} else if inCode != outCode {
 		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
+	}
+}
+
+func TestResponseMessage(t *testing.T) {
+	var (
+		inID, outID       sprout.MessageID
+		inNodes, outNodes []forest.Node
+		err               error
+		sconn             *sprout.Conn
+	)
+	const count = 3
+	inNodes = make([]forest.Node, count)
+	for i := range inNodes {
+		inNodes[i] = randomIdentity(t)
+	}
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnResponse = func(s *sprout.Conn, m sprout.MessageID, nodes []forest.Node) error {
+		outID = m
+		outNodes = nodes
+		return nil
+	}
+	err = sconn.SendResponse(inID, inNodes)
+	if err != nil {
+		t.Fatalf("failed to send response: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if len(inNodes) != len(outNodes) {
+		t.Fatalf("node list length mismatch, expected %d, got %d", len(inNodes), len(outNodes))
+	}
+	for i, node := range inNodes {
+		if !node.Equals(outNodes[i]) {
+			t.Fatalf("Node mismatch at index %d,\nin: %v\nout: %v", i, node, outNodes[i])
+		}
 	}
 }

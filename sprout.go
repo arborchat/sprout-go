@@ -130,16 +130,17 @@ const nodeLineFormat = "%s %s\n"
 func NodeLine(n forest.Node) string {
 	id, _ := n.ID().MarshalText()
 	data, _ := n.MarshalBinary()
-	return fmt.Sprintf(nodeLineFormat, string(id), base64.URLEncoding.EncodeToString(data))
+	return fmt.Sprintf(nodeLineFormat, string(id), base64.RawURLEncoding.EncodeToString(data))
 }
 
-func (s *Conn) SendResponse(msgID MessageID, nodes []forest.Node) (MessageID, error) {
+func (s *Conn) SendResponse(msgID MessageID, nodes []forest.Node) error {
 	builder := &strings.Builder{}
 	for _, n := range nodes {
 		builder.WriteString(NodeLine(n))
 	}
 	op := Response
-	return s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", len(nodes), builder.String())
+	_, err := s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", len(nodes), builder.String())
+	return err
 }
 
 func (s *Conn) subscribeOp(op Verb, community *forest.Community) (MessageID, error) {
@@ -175,9 +176,10 @@ const (
 	ErrorProtocolTooNew
 )
 
-func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) (MessageID, error) {
+func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error {
 	op := Status
-	return s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
+	_, err := s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
+	return err
 }
 
 func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
@@ -376,7 +378,7 @@ func (s *Conn) readNodeLines(count int) ([]forest.Node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read node: %v", err)
 		}
-		if node.ID() != id {
+		if !node.ID().Equals(id) {
 			expectedIDString, _ := id.MarshalText()
 			actualIDString, _ := node.ID().MarshalText()
 			return nil, fmt.Errorf("message id mismatch, node given as %s hashes to %s", expectedIDString, actualIDString)
