@@ -185,13 +185,7 @@ func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error
 func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
 	builder := &strings.Builder{}
 	for _, node := range nodes {
-		id := node.ID()
-		b, _ := id.MarshalText()
-		n, _ := node.MarshalBinary()
-		enc := base64.URLEncoding.EncodeToString(n)
-		_, _ = builder.Write(b)
-		_, _ = builder.WriteString(enc)
-		builder.WriteString("\n")
+		builder.WriteString(NodeLine(node))
 	}
 	op := Announce
 

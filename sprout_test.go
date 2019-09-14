@@ -3,6 +3,7 @@ package sprout_test
 import (
 	"bytes"
 	"encoding/base64"
+	"io"
 	"math/rand"
 	"net"
 	"testing"
@@ -43,6 +44,23 @@ func (l LoopbackConn) SetReadDeadline(t time.Time) error {
 func (l LoopbackConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
+
+// TeeConn is a debugging tool that can be used in place of LoopbackConn
+// to log all of the protocol text to an io.Writer for analysis
+type TeeConn struct {
+	LoopbackConn
+	Out io.Writer
+}
+
+func (t *TeeConn) Write(b []byte) (int, error) {
+	n, err := t.LoopbackConn.Write(b)
+	if err != nil {
+		return n, err
+	}
+	return t.Out.Write(b)
+}
+
+var _ net.Conn = &TeeConn{}
 
 func TestVersionMessage(t *testing.T) {
 	var (
@@ -412,6 +430,48 @@ func TestResponseMessage(t *testing.T) {
 		return nil
 	}
 	err = sconn.SendResponse(inID, inNodes)
+	if err != nil {
+		t.Fatalf("failed to send response: %v", err)
+	}
+	err = sconn.ReadMessage()
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
+	}
+	if inID != outID {
+		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
+	} else if len(inNodes) != len(outNodes) {
+		t.Fatalf("node list length mismatch, expected %d, got %d", len(inNodes), len(outNodes))
+	}
+	for i, node := range inNodes {
+		if !node.Equals(outNodes[i]) {
+			t.Fatalf("Node mismatch at index %d,\nin: %v\nout: %v", i, node, outNodes[i])
+		}
+	}
+}
+
+func TestAnnounceMessage(t *testing.T) {
+	var (
+		inID, outID       sprout.MessageID
+		inNodes, outNodes []forest.Node
+		err               error
+		sconn             *sprout.Conn
+	)
+	const count = 3
+	inNodes = make([]forest.Node, count)
+	for i := range inNodes {
+		inNodes[i] = randomIdentity(t)
+	}
+	conn := &LoopbackConn{}
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnAnnounce = func(s *sprout.Conn, m sprout.MessageID, nodes []forest.Node) error {
+		outID = m
+		outNodes = nodes
+		return nil
+	}
+	inID, err = sconn.SendAnnounce(inNodes)
 	if err != nil {
 		t.Fatalf("failed to send response: %v", err)
 	}
