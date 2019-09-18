@@ -50,6 +50,7 @@ func main() {
 		workerCount := 0
 		go func() {
 			time.Sleep(time.Second)
+			log.Printf("Launching test connection to verify basic functionality")
 			conn, err := tls.Dial("tcp", address, &tls.Config{
 				InsecureSkipVerify: true,
 			})
@@ -57,10 +58,18 @@ func main() {
 				log.Printf("Test dial failed: %v", err)
 				return
 			}
+			defer func() {
+				if err := conn.Close(); err != nil {
+					log.Printf("Failed to close test connection: %v", err)
+					return
+				}
+				log.Printf("Closed test connection")
+			}()
 			sconn, err := sprout.NewConn(conn)
 			if err != nil {
 				log.Printf("Failed to create sprout conn from test dial: %v", err)
 			}
+			log.Printf("Sending version information on test connection")
 			if _, err := sconn.SendVersion(); err != nil {
 				log.Printf("Failed to send version information from test conn: %v", err)
 			}
