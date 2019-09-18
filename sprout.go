@@ -1,9 +1,10 @@
 package sprout
 
 import (
+	"bufio"
 	"encoding/base64"
 	"fmt"
-	"net"
+	"io"
 	"strings"
 
 	forest "git.sr.ht/~whereswaldon/forest-go"
@@ -46,7 +47,8 @@ var formats = map[Verb]string{
 }
 
 type Conn struct {
-	net.Conn
+	Conn          io.ReadWriteCloser
+	BufferedConn  io.Reader
 	Major, Minor  int
 	nextMessageID MessageID
 
@@ -62,12 +64,18 @@ type Conn struct {
 	OnAnnounce    func(s *Conn, messageID MessageID, nodes []forest.Node) error
 }
 
-func NewConn(transport net.Conn) (*Conn, error) {
+func NewConn(transport io.ReadWriteCloser) (*Conn, error) {
+	type bufferedConn struct {
+		io.Reader
+		io.WriteCloser
+	}
 	s := &Conn{
 		Major:         CurrentMajor,
 		Minor:         CurrentMinor,
 		nextMessageID: 0,
-		Conn:          transport,
+		// Reader must be buffered so that Fscanf can Unread characters
+		BufferedConn: bufio.NewReader(transport),
+		Conn:         transport,
 	}
 	return s, nil
 }
@@ -88,7 +96,7 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	opts[0] = messageIDIn
 	opts = append(opts, fmtArgs...)
 	messageID = messageIDIn
-	_, err = fmt.Fprintf(s, format, opts...)
+	_, err = fmt.Fprintf(s.Conn, format, opts...)
 	return messageID, err
 }
 
@@ -193,7 +201,7 @@ func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error
 }
 
 func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
-	n, err := fmt.Fscanf(s.Conn, formats[verb], fields...)
+	n, err := fmt.Fscanf(s.BufferedConn, formats[verb], fields...)
 	if err != nil {
 		return fmt.Errorf("failed to scan %s: %v", verb, err)
 	} else if n < len(fields) {
@@ -204,7 +212,7 @@ func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 
 func (s *Conn) ReadMessage() error {
 	var word string
-	n, err := fmt.Fscanf(s.Conn, "%s", &word)
+	n, err := fmt.Fscanf(s.BufferedConn, "%s", &word)
 	if err != nil {
 		return fmt.Errorf("error scanning verb: %v", err)
 	} else if n < 1 {
@@ -358,7 +366,7 @@ func (s *Conn) readNodeLines(count int) ([]forest.Node, error) {
 			idString   string
 			nodeString string
 		)
-		n, err := fmt.Fscanf(s.Conn, nodeLineFormat, &idString, &nodeString)
+		n, err := fmt.Fscanf(s.BufferedConn, nodeLineFormat, &idString, &nodeString)
 		if err != nil {
 			return nil, fmt.Errorf("error reading node line: %v", err)
 		} else if n != 2 {
@@ -386,7 +394,7 @@ func (s *Conn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
 	ids := make([]*fields.QualifiedHash, count)
 	for i := 0; i < count; i++ {
 		var idString string
-		n, err := fmt.Fscanln(s.Conn, &idString)
+		n, err := fmt.Fscanln(s.BufferedConn, &idString)
 		if err != nil {
 			return nil, fmt.Errorf("error reading id line: %v", err)
 		} else if n != 1 {
