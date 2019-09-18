@@ -228,6 +228,9 @@ func (s *Conn) ReadMessage() error {
 		if err := s.scanOp(verb, &messageID, &major, &minor); err != nil {
 			return err
 		}
+		if s.OnVersion == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnVersion(s, messageID, major, minor); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -239,6 +242,9 @@ func (s *Conn) ReadMessage() error {
 		)
 		if err := s.scanOp(verb, &messageID, &nodeType, &quantity); err != nil {
 			return err
+		}
+		if s.OnList == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnList(s, messageID, nodeType, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -254,6 +260,9 @@ func (s *Conn) ReadMessage() error {
 		ids, err := s.readNodeIDs(count)
 		if err != nil {
 			return fmt.Errorf("failed to read node ids in query message: %v", err)
+		}
+		if s.OnQuery == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnQuery(s, messageID, ids); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -272,6 +281,9 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("failed to unmarshal ancestry target: %v", err)
 		}
 
+		if s.OnAncestry == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnAncestry(s, messageID, id, levels); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -288,6 +300,9 @@ func (s *Conn) ReadMessage() error {
 		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
 			return fmt.Errorf("failed to unmarshal leaves_of target: %v", err)
 		}
+		if s.OnLeavesOf == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -302,6 +317,9 @@ func (s *Conn) ReadMessage() error {
 		nodes, err := s.readNodeLines(count)
 		if err != nil {
 			return fmt.Errorf("failed reading response node list: %v", err)
+		}
+		if s.OnResponse == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnResponse(s, targetMessageID, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -325,6 +343,9 @@ func (s *Conn) ReadMessage() error {
 		if verb == Unsubscribe {
 			hook = s.OnUnsubscribe
 		}
+		if hook == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := hook(s, messageID, id); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -335,6 +356,9 @@ func (s *Conn) ReadMessage() error {
 		)
 		if err := s.scanOp(verb, &messageID, &errorCode); err != nil {
 			return err
+		}
+		if s.OnStatus == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnStatus(s, messageID, errorCode); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -352,6 +376,9 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("failed parsing announce node list: %v", err)
 		}
 
+		if s.OnAnnounce == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnAnnounce(s, messageID, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
