@@ -3,6 +3,7 @@ package sprout_test
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"math/rand"
 	"net"
@@ -492,8 +493,18 @@ func TestAnnounceMessage(t *testing.T) {
 }
 
 func TestWithRealNetConn(t *testing.T) {
-	address := "localhost:7890"
-	listener, err := net.Listen("tcp", address)
+	var (
+		address  string
+		listener net.Listener
+		err      error
+	)
+	for i := 7000; i < 8000; i++ {
+		address = fmt.Sprintf("localhost:%d", i)
+		listener, err = net.Listen("tcp", address)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatalf("Failed to create test listener: %v", err)
 	}
