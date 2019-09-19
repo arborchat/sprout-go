@@ -30,7 +30,7 @@ const (
 	Unsubscribe Verb = "unsubscribe"
 	Announce    Verb = "announce"
 	Response    Verb = "response"
-	Status      Verb = "error"
+	Status      Verb = "status"
 )
 
 var formats = map[Verb]string{
@@ -179,9 +179,11 @@ func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash) (MessageID, 
 type StatusCode int
 
 const (
-	ErrorMalformed StatusCode = iota
-	ErrorProtocolTooOld
-	ErrorProtocolTooNew
+	StatusOk            StatusCode = 0
+	ErrorMalformed      StatusCode = 1
+	ErrorProtocolTooOld StatusCode = 2
+	ErrorProtocolTooNew StatusCode = 3
+	ErrorUnknownNode    StatusCode = 4
 )
 
 func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error {
