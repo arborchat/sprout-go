@@ -184,6 +184,7 @@ type WorkerConfig struct {
 	*log.Logger
 	ConnState
 	*MessageStore
+	subscriptionID int
 }
 
 type ConnState struct {
@@ -215,6 +216,8 @@ func (c *WorkerConfig) Run() {
 	conn.OnUnsubscribe = c.OnUnsubscribe
 	conn.OnStatus = c.OnStatus
 	conn.OnAnnounce = c.OnAnnounce
+	c.subscriptionID = c.MessageStore.SubscribeToNewMessages(c.HandleNewNode)
+	defer c.MessageStore.UnsubscribeToNewMessages(c.subscriptionID)
 	for {
 		if err := conn.ReadMessage(); err != nil {
 			c.Printf("failed to read sprout message: %v", err)
@@ -226,6 +229,17 @@ func (c *WorkerConfig) Run() {
 			return
 		default:
 		}
+	}
+}
+
+func (c *WorkerConfig) HandleNewNode(node forest.Node) {
+	log.Printf("Got new node: %v", node)
+	switch n := node.(type) {
+	case *forest.Identity:
+	case *forest.Community:
+	case *forest.Reply:
+	default:
+		log.Printf("Unknown node type: %T", n)
 	}
 }
 
