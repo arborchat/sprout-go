@@ -67,12 +67,14 @@ func (m *MessageStore) Get(id *fields.QualifiedHash) (node forest.Node, present 
 	return
 }
 
-func (m *MessageStore) Add(node forest.Node) (err error) {
+func (m *MessageStore) Add(node forest.Node, addedByID int) (err error) {
 	m.requests <- func() {
 		err = m.store.Add(node)
 		if err == nil {
-			for _, handler := range m.subscribers {
-				handler(node)
+			for subscriptionID, handler := range m.subscribers {
+				if subscriptionID != addedByID {
+					handler(node)
+				}
 			}
 		}
 	}

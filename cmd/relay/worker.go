@@ -105,11 +105,21 @@ func (c *Worker) OnVersion(s *sprout.Conn, messageID sprout.MessageID, major, mi
 }
 
 func (c *Worker) OnList(s *sprout.Conn, messageID sprout.MessageID, nodeType fields.NodeType, quantity int) error {
+	// requires better iteration on Store types
 	return nil
 }
 
 func (c *Worker) OnQuery(s *sprout.Conn, messageID sprout.MessageID, nodeIds []*fields.QualifiedHash) error {
-	return nil
+	results := make([]forest.Node, 0, len(nodeIds))
+	for _, id := range nodeIds {
+		node, present, err := c.MessageStore.Get(id)
+		if err != nil {
+			return fmt.Errorf("failed checking for node %v in store: %w", id, err)
+		} else if present {
+			results = append(results, node)
+		}
+	}
+	return s.SendResponse(messageID, results)
 }
 
 func (c *Worker) OnAncestry(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
@@ -151,9 +161,28 @@ func (c *Worker) OnUnsubscribe(s *sprout.Conn, messageID sprout.MessageID, nodeI
 }
 
 func (c *Worker) OnStatus(s *sprout.Conn, messageID sprout.MessageID, code sprout.StatusCode) error {
+	c.Printf("Received status %d for message %d", code, messageID)
 	return nil
 }
 
 func (c *Worker) OnAnnounce(s *sprout.Conn, messageID sprout.MessageID, nodes []forest.Node) error {
-	return nil
+	var err error
+	for _, node := range nodes {
+		switch n := node.(type) {
+		case *forest.Identity:
+			err = c.MessageStore.Add(n, c.subscriptionID)
+		case *forest.Community:
+			err = c.MessageStore.Add(n, c.subscriptionID)
+		case *forest.Reply:
+			if c.Session.IsSubscribed(&n.CommunityID) {
+				err = c.MessageStore.Add(n, c.subscriptionID)
+			}
+		default:
+			err = fmt.Errorf("Unknown node type announced: %T", node)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("Failed handling announce node: %w", err)
+	}
+	return s.SendStatus(messageID, sprout.StatusOk)
 }
