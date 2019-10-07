@@ -16,7 +16,20 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	certpath := flag.String("certpath", "", "Location of the TLS public key (certificate file)")
 	keypath := flag.String("keypath", "", "Location of the TLS private key (key file)")
+	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(),
+			`Usage:
+
+%s [flags] [address ...]
+
+%s acts as a Sprout relay. It will listen on the port configured by its flags
+and will establish Sprout connections to all addresses provided as arguments.
+
+`, os.Args[0], os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	cert, err := tls.LoadX509KeyPair(*certpath, *keypath)
@@ -97,6 +110,26 @@ func main() {
 			}
 		}
 	}()
+	for _, address := range flag.Args() {
+		var tlsConfig *tls.Config
+		if *insecure {
+			tlsConfig = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		}
+		conn, err := tls.Dial("tcp", address, tlsConfig)
+		if err != nil {
+			log.Printf("Failed to connect to %s: %v", address, err)
+			continue
+		}
+		worker, err := NewWorker(done, conn, messages)
+		if err != nil {
+			log.Printf("Failed launching worker to connect to address %s: %v", address, err)
+			continue
+		}
+		worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%v ", address), log.Flags())
+		go worker.Run()
+	}
 	// Block until a signal is received.
 	<-c
 	close(done)
