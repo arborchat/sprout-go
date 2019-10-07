@@ -72,7 +72,9 @@ func (c *Worker) HandleNewNode(node forest.Node) {
 	log.Printf("Got new node: %v", node)
 	switch n := node.(type) {
 	case *forest.Identity:
+    	// shouldn't just announce random user ids unsolicted
 	case *forest.Community:
+    	// maybe we should announce new communities?
 	case *forest.Reply:
 		if c.IsSubscribed(&n.CommunityID) {
 			if _, err := c.SendAnnounce([]forest.Node{n}); err != nil {
@@ -123,14 +125,65 @@ func (c *Worker) OnQuery(s *sprout.Conn, messageID sprout.MessageID, nodeIds []*
 }
 
 func (c *Worker) OnAncestry(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
-	return nil
+    ancestors := make([]forest.Node,0,1024)
+    currentNode, known, err := c.MessageStore.Get(nodeID)
+    if err != nil {
+        return fmt.Errorf("failed looking for node %v: %w", nodeID, err)
+    } else if !known {
+        return fmt.Errorf("asked for ancestry of unknown node %v", nodeID)
+    }
+    for i := 0; i < levels; i++ {
+        if currentNode.ParentID().Equals(fields.NullHash()) {
+            // no parent, we're done
+            break
+        }
+        parentNode, known, err := c.MessageStore.Get(currentNode.ParentID())
+        if err != nil {
+            return fmt.Errorf("couldn't look up node with id %v (parent of %v): %w", currentNode.ParentID(), currentNode.ID(), err)
+        } else if !known {
+            // we don't know any more ancestry, so we're done
+            break
+        }
+        ancestors=append(ancestors,parentNode)
+        currentNode = parentNode
+    }
+	return s.SendResponse(messageID, ancestors)
 }
 
 func (c *Worker) OnLeavesOf(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
-	return nil
+    descendants := make([]*fields.QualifiedHash,0,1024)
+    descendants = append(descendants, nodeID)
+    leaves := make([]forest.Node,0,1024)
+    for len(descendants) > 0 {
+        children, err := c.MessageStore.store.Children(descendants[0])
+        if err != nil {
+        return fmt.Errorf("failed fetching children for %v: %w", descendants[0], err)
+        }
+        if len(children) == 0 {
+            node, has, err := c.MessageStore.Get(descendants[0])
+            if err != nil {
+                return fmt.Errorf("failed fetching node for %v: %w", descendants[0], err)
+            } else if !has {
+                // not sure what to do here
+                continue
+            }
+            leaves = append(leaves, node)
+            continue
+        }
+        descendants = descendants[1:]
+        for _, child := range children {
+            descendants = append(descendants, child)
+        }
+    }
+    return s.SendResponse(messageID, leaves)
 }
 
 func (c *Worker) OnResponse(s *sprout.Conn, target sprout.MessageID, nodes []forest.Node) error {
+    for _, node := range nodes {
+        if err := c.MessageStore.Add(node,c.subscriptionID); err != nil {
+            return fmt.Errorf("failed to add node to store: %w", err)
+        }
+    }
 	return nil
 }
 
