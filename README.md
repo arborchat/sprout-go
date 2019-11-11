@@ -17,3 +17,6 @@ You can get information about the Arbor project [here](https://man.sr.ht/~wheres
 
 For news about the project, join our [mailing list](https://lists.sr.ht/~whereswaldon/arbor-dev)!
 
+## Relay
+
+This repo currently contains an example implementation of an Arbor Relay, which is analagous to a "server" in a traditional chat system. You can find it in `cmd/relay`.
