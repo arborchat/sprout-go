@@ -3,6 +3,7 @@ package sprout_test
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"math/rand"
 	"net"
@@ -488,5 +489,65 @@ func TestAnnounceMessage(t *testing.T) {
 		if !node.Equals(outNodes[i]) {
 			t.Fatalf("Node mismatch at index %d,\nin: %v\nout: %v", i, node, outNodes[i])
 		}
+	}
+}
+
+func TestWithRealNetConn(t *testing.T) {
+	var (
+		address  string
+		listener net.Listener
+		err      error
+	)
+	for i := 7000; i < 8000; i++ {
+		address = fmt.Sprintf("localhost:%d", i)
+		listener, err = net.Listen("tcp", address)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatalf("Failed to create test listener: %v", err)
+	}
+	go func() {
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			t.Fatalf("Failed to dial test listener: %v", err)
+		}
+		defer conn.Close()
+		sconn, err := sprout.NewConn(conn)
+		if err != nil {
+			t.Fatalf("Failed to make sprout.Conn from net.Conn: %v", err)
+		}
+		if _, err := sconn.SendVersion(); err != nil {
+			t.Fatalf("Failed to send version: %v", err)
+		}
+	}()
+	conn, err := listener.Accept()
+	if err != nil {
+		t.Fatalf("Failed to accept test connection: %v", err)
+	}
+	sconn, err := sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("Failed to make sprout.Conn from net.Conn: %v", err)
+	}
+	out := make(chan struct {
+		id           sprout.MessageID
+		major, minor int
+	}, 1)
+	sconn.OnVersion = func(s *sprout.Conn, id sprout.MessageID, major, minor int) error {
+		out <- struct {
+			id           sprout.MessageID
+			major, minor int
+		}{id: id, major: major, minor: minor}
+		return nil
+	}
+	if err := sconn.ReadMessage(); err != nil {
+		t.Fatalf("Failed to read message from test connection: %v", err)
+	}
+	select {
+	case <-out:
+	// handler was invoked, we're all good
+	case <-time.NewTicker(time.Second).C:
+		t.Fatalf("Handler wasn't invoked within 1 second")
 	}
 }

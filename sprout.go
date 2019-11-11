@@ -1,9 +1,10 @@
 package sprout
 
 import (
+	"bufio"
 	"encoding/base64"
 	"fmt"
-	"net"
+	"io"
 	"strings"
 
 	forest "git.sr.ht/~whereswaldon/forest-go"
@@ -29,7 +30,7 @@ const (
 	Unsubscribe Verb = "unsubscribe"
 	Announce    Verb = "announce"
 	Response    Verb = "response"
-	Status      Verb = "error"
+	Status      Verb = "status"
 )
 
 var formats = map[Verb]string{
@@ -46,7 +47,8 @@ var formats = map[Verb]string{
 }
 
 type Conn struct {
-	net.Conn
+	Conn          io.ReadWriteCloser
+	BufferedConn  io.Reader
 	Major, Minor  int
 	nextMessageID MessageID
 
@@ -62,12 +64,18 @@ type Conn struct {
 	OnAnnounce    func(s *Conn, messageID MessageID, nodes []forest.Node) error
 }
 
-func NewConn(transport net.Conn) (*Conn, error) {
+func NewConn(transport io.ReadWriteCloser) (*Conn, error) {
+	type bufferedConn struct {
+		io.Reader
+		io.WriteCloser
+	}
 	s := &Conn{
 		Major:         CurrentMajor,
 		Minor:         CurrentMinor,
 		nextMessageID: 0,
-		Conn:          transport,
+		// Reader must be buffered so that Fscanf can Unread characters
+		BufferedConn: bufio.NewReader(transport),
+		Conn:         transport,
 	}
 	return s, nil
 }
@@ -88,7 +96,7 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	opts[0] = messageIDIn
 	opts = append(opts, fmtArgs...)
 	messageID = messageIDIn
-	_, err = fmt.Fprintf(s, format, opts...)
+	_, err = fmt.Fprintf(s.Conn, format, opts...)
 	return messageID, err
 }
 
@@ -171,9 +179,11 @@ func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash) (MessageID, 
 type StatusCode int
 
 const (
-	ErrorMalformed StatusCode = iota
-	ErrorProtocolTooOld
-	ErrorProtocolTooNew
+	StatusOk            StatusCode = 0
+	ErrorMalformed      StatusCode = 1
+	ErrorProtocolTooOld StatusCode = 2
+	ErrorProtocolTooNew StatusCode = 3
+	ErrorUnknownNode    StatusCode = 4
 )
 
 func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error {
@@ -193,7 +203,7 @@ func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error
 }
 
 func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
-	n, err := fmt.Fscanf(s.Conn, formats[verb], fields...)
+	n, err := fmt.Fscanf(s.BufferedConn, formats[verb], fields...)
 	if err != nil {
 		return fmt.Errorf("failed to scan %s: %v", verb, err)
 	} else if n < len(fields) {
@@ -204,7 +214,7 @@ func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 
 func (s *Conn) ReadMessage() error {
 	var word string
-	n, err := fmt.Fscanf(s.Conn, "%s", &word)
+	n, err := fmt.Fscanf(s.BufferedConn, "%s", &word)
 	if err != nil {
 		return fmt.Errorf("error scanning verb: %v", err)
 	} else if n < 1 {
@@ -220,6 +230,9 @@ func (s *Conn) ReadMessage() error {
 		if err := s.scanOp(verb, &messageID, &major, &minor); err != nil {
 			return err
 		}
+		if s.OnVersion == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnVersion(s, messageID, major, minor); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -231,6 +244,9 @@ func (s *Conn) ReadMessage() error {
 		)
 		if err := s.scanOp(verb, &messageID, &nodeType, &quantity); err != nil {
 			return err
+		}
+		if s.OnList == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnList(s, messageID, nodeType, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -246,6 +262,9 @@ func (s *Conn) ReadMessage() error {
 		ids, err := s.readNodeIDs(count)
 		if err != nil {
 			return fmt.Errorf("failed to read node ids in query message: %v", err)
+		}
+		if s.OnQuery == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnQuery(s, messageID, ids); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -264,6 +283,9 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("failed to unmarshal ancestry target: %v", err)
 		}
 
+		if s.OnAncestry == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnAncestry(s, messageID, id, levels); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -280,6 +302,9 @@ func (s *Conn) ReadMessage() error {
 		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
 			return fmt.Errorf("failed to unmarshal leaves_of target: %v", err)
 		}
+		if s.OnLeavesOf == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -294,6 +319,9 @@ func (s *Conn) ReadMessage() error {
 		nodes, err := s.readNodeLines(count)
 		if err != nil {
 			return fmt.Errorf("failed reading response node list: %v", err)
+		}
+		if s.OnResponse == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnResponse(s, targetMessageID, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -317,6 +345,9 @@ func (s *Conn) ReadMessage() error {
 		if verb == Unsubscribe {
 			hook = s.OnUnsubscribe
 		}
+		if hook == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := hook(s, messageID, id); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -327,6 +358,9 @@ func (s *Conn) ReadMessage() error {
 		)
 		if err := s.scanOp(verb, &messageID, &errorCode); err != nil {
 			return err
+		}
+		if s.OnStatus == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnStatus(s, messageID, errorCode); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
@@ -344,6 +378,9 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("failed parsing announce node list: %v", err)
 		}
 
+		if s.OnAnnounce == nil {
+			return fmt.Errorf("no handler set for verb %s", verb)
+		}
 		if err := s.OnAnnounce(s, messageID, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
@@ -358,7 +395,7 @@ func (s *Conn) readNodeLines(count int) ([]forest.Node, error) {
 			idString   string
 			nodeString string
 		)
-		n, err := fmt.Fscanf(s.Conn, nodeLineFormat, &idString, &nodeString)
+		n, err := fmt.Fscanf(s.BufferedConn, nodeLineFormat, &idString, &nodeString)
 		if err != nil {
 			return nil, fmt.Errorf("error reading node line: %v", err)
 		} else if n != 2 {
@@ -386,7 +423,7 @@ func (s *Conn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
 	ids := make([]*fields.QualifiedHash, count)
 	for i := 0; i < count; i++ {
 		var idString string
-		n, err := fmt.Fscanln(s.Conn, &idString)
+		n, err := fmt.Fscanln(s.BufferedConn, &idString)
 		if err != nil {
 			return nil, fmt.Errorf("error reading id line: %v", err)
 		} else if n != 1 {
