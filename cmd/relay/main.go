@@ -9,11 +9,14 @@ import (
 	"os/signal"
 	"time"
 
+	"git.sr.ht/~whereswaldon/forest-go/grove"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 )
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	wd, _ := os.Getwd()
+	grovePath := flag.String("grovepath", wd, "Location of the grove of Arbor Nodes to use")
 	certpath := flag.String("certpath", "", "Location of the TLS public key (certificate file)")
 	keypath := flag.String("keypath", "", "Location of the TLS private key (key file)")
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
@@ -55,7 +58,12 @@ and will establish Sprout connections to all addresses provided as arguments.
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
-	messages := NewMessageStore()
+	grove, err := grove.New(*grovePath)
+	if err != nil {
+		log.Fatalf("Failed to create grove at %s: %v", *grovePath, err)
+	}
+
+	messages := NewMessageStore(grove)
 	defer messages.Destroy()
 
 	go func() {
