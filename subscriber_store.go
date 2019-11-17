@@ -1,23 +1,26 @@
-package main
+package sprout
 
 import (
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 )
 
-type MessageStore struct {
+// SubscriberStore is a wrapper type that extends the forest.Store interface
+// with the observer pattern. Code can subscribe for updates each time a
+// node is inserted into the store using Add or AddAs
+type SubscriberStore struct {
 	store             forest.Store
 	requests          chan func()
 	nextSubscriberKey int
 	subscribers       map[int]func(forest.Node)
 }
 
-var _ forest.Store = &MessageStore{}
+var _ forest.Store = &SubscriberStore{}
 
 // NewMessageStore creates a thread-safe storage structure for
 // forest nodes by wrapping an existing store implementation
-func NewMessageStore(store forest.Store) *MessageStore {
-	m := &MessageStore{
+func NewSubscriberStore(store forest.Store) *SubscriberStore {
+	m := &SubscriberStore{
 		store:       store,
 		requests:    make(chan func()),
 		subscribers: make(map[int]func(forest.Node)),
@@ -30,7 +33,11 @@ func NewMessageStore(store forest.Store) *MessageStore {
 	return m
 }
 
-func (m *MessageStore) SubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID int) {
+// SubscribeToNewMessages establishes the given function as a handler to be
+// invoked on each node added to the store. The returned subscription ID
+// can be used to unsubscribe later, as well as to supress notifications
+// with AddAs().
+func (m *SubscriberStore) SubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID int) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -42,7 +49,9 @@ func (m *MessageStore) SubscribeToNewMessages(handler func(n forest.Node)) (subs
 	return
 }
 
-func (m *MessageStore) UnsubscribeToNewMessages(subscriptionID int) {
+// UnsubscribeToNewMessages removes the handler for a given subscription from
+// the store.
+func (m *SubscriberStore) UnsubscribeToNewMessages(subscriptionID int) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -54,7 +63,7 @@ func (m *MessageStore) UnsubscribeToNewMessages(subscriptionID int) {
 	return
 }
 
-func (m *MessageStore) CopyInto(s forest.Store) (err error) {
+func (m *SubscriberStore) CopyInto(s forest.Store) (err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -64,7 +73,7 @@ func (m *MessageStore) CopyInto(s forest.Store) (err error) {
 	return
 }
 
-func (m *MessageStore) Get(id *fields.QualifiedHash) (node forest.Node, present bool, err error) {
+func (m *SubscriberStore) Get(id *fields.QualifiedHash) (node forest.Node, present bool, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -74,7 +83,7 @@ func (m *MessageStore) Get(id *fields.QualifiedHash) (node forest.Node, present 
 	return
 }
 
-func (m *MessageStore) GetIdentity(id *fields.QualifiedHash) (node forest.Node, present bool, err error) {
+func (m *SubscriberStore) GetIdentity(id *fields.QualifiedHash) (node forest.Node, present bool, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -84,7 +93,7 @@ func (m *MessageStore) GetIdentity(id *fields.QualifiedHash) (node forest.Node, 
 	return
 }
 
-func (m *MessageStore) GetCommunity(id *fields.QualifiedHash) (node forest.Node, present bool, err error) {
+func (m *SubscriberStore) GetCommunity(id *fields.QualifiedHash) (node forest.Node, present bool, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -94,7 +103,7 @@ func (m *MessageStore) GetCommunity(id *fields.QualifiedHash) (node forest.Node,
 	return
 }
 
-func (m *MessageStore) GetConversation(communityID, conversationID *fields.QualifiedHash) (node forest.Node, present bool, err error) {
+func (m *SubscriberStore) GetConversation(communityID, conversationID *fields.QualifiedHash) (node forest.Node, present bool, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -104,7 +113,7 @@ func (m *MessageStore) GetConversation(communityID, conversationID *fields.Quali
 	return
 }
 
-func (m *MessageStore) GetReply(communityID, conversationID, replyID *fields.QualifiedHash) (node forest.Node, present bool, err error) {
+func (m *SubscriberStore) GetReply(communityID, conversationID, replyID *fields.QualifiedHash) (node forest.Node, present bool, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -114,7 +123,7 @@ func (m *MessageStore) GetReply(communityID, conversationID, replyID *fields.Qua
 	return
 }
 
-func (m *MessageStore) Children(id *fields.QualifiedHash) (ids []*fields.QualifiedHash, err error) {
+func (m *SubscriberStore) Children(id *fields.QualifiedHash) (ids []*fields.QualifiedHash, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -124,7 +133,7 @@ func (m *MessageStore) Children(id *fields.QualifiedHash) (ids []*fields.Qualifi
 	return
 }
 
-func (m *MessageStore) Recent(nodeType fields.NodeType, quantity int) (nodes []forest.Node, err error) {
+func (m *SubscriberStore) Recent(nodeType fields.NodeType, quantity int) (nodes []forest.Node, err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -137,7 +146,7 @@ func (m *MessageStore) Recent(nodeType fields.NodeType, quantity int) (nodes []f
 // Add inserts a node into the underlying store. Importantly, this will send a notification
 // of a new node to *all* subscribers. If the calling code is a subscriber, it will still
 // be notified of the new node. To supress this, use AddAs() instead.
-func (m *MessageStore) Add(node forest.Node) (err error) {
+func (m *SubscriberStore) Add(node forest.Node) (err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -150,7 +159,7 @@ func (m *MessageStore) Add(node forest.Node) (err error) {
 // AddAs allows adding a node to the underlying store without being notified
 // of it as a new node. The addedByID (subscription id returned from SubscribeToNewMessages)
 // will not be notified of the new nodes, but all other subscribers will be.
-func (m *MessageStore) AddAs(node forest.Node, addedByID int) (err error) {
+func (m *SubscriberStore) AddAs(node forest.Node, addedByID int) (err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -169,6 +178,6 @@ func (m *MessageStore) AddAs(node forest.Node, addedByID int) (err error) {
 
 // Shut down the worker gorountine that powers this store. Subsequent
 // calls to methods on this MessageStore have undefined behavior
-func (m *MessageStore) Destroy() {
+func (m *SubscriberStore) Destroy() {
 	close(m.requests)
 }

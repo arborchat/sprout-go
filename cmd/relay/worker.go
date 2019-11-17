@@ -15,14 +15,14 @@ type Worker struct {
 	*sprout.Conn
 	*log.Logger
 	*Session
-	*MessageStore
+	*sprout.SubscriberStore
 	subscriptionID int
 }
 
-func NewWorker(done <-chan struct{}, conn net.Conn, store *MessageStore) (*Worker, error) {
+func NewWorker(done <-chan struct{}, conn net.Conn, store *sprout.SubscriberStore) (*Worker, error) {
 	w := &Worker{
-		Done:         done,
-		MessageStore: store,
+		Done:            done,
+		SubscriberStore: store,
 	}
 	var err error
 	w.Conn, err = sprout.NewConn(conn)
@@ -52,8 +52,8 @@ func (c *Worker) Run() {
 		c.Printf("Closed network connection")
 	}()
 	defer c.Printf("Shutting down")
-	c.subscriptionID = c.MessageStore.SubscribeToNewMessages(c.HandleNewNode)
-	defer c.MessageStore.UnsubscribeToNewMessages(c.subscriptionID)
+	c.subscriptionID = c.SubscriberStore.SubscribeToNewMessages(c.HandleNewNode)
+	defer c.SubscriberStore.UnsubscribeToNewMessages(c.subscriptionID)
 	for {
 		if err := c.ReadMessage(); err != nil {
 			c.Printf("failed to read sprout message: %v", err)
@@ -108,7 +108,7 @@ func (c *Worker) OnVersion(s *sprout.Conn, messageID sprout.MessageID, major, mi
 
 func (c *Worker) OnList(s *sprout.Conn, messageID sprout.MessageID, nodeType fields.NodeType, quantity int) error {
 	// requires better iteration on Store types
-	nodes, err := c.MessageStore.Recent(nodeType, quantity)
+	nodes, err := c.SubscriberStore.Recent(nodeType, quantity)
 	if err != nil {
 		return fmt.Errorf("failed listing recent nodes of type %d: %w", nodeType, err)
 	}
@@ -118,7 +118,7 @@ func (c *Worker) OnList(s *sprout.Conn, messageID sprout.MessageID, nodeType fie
 func (c *Worker) OnQuery(s *sprout.Conn, messageID sprout.MessageID, nodeIds []*fields.QualifiedHash) error {
 	results := make([]forest.Node, 0, len(nodeIds))
 	for _, id := range nodeIds {
-		node, present, err := c.MessageStore.Get(id)
+		node, present, err := c.SubscriberStore.Get(id)
 		if err != nil {
 			return fmt.Errorf("failed checking for node %v in store: %w", id, err)
 		} else if present {
@@ -130,7 +130,7 @@ func (c *Worker) OnQuery(s *sprout.Conn, messageID sprout.MessageID, nodeIds []*
 
 func (c *Worker) OnAncestry(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
 	ancestors := make([]forest.Node, 0, 1024)
-	currentNode, known, err := c.MessageStore.Get(nodeID)
+	currentNode, known, err := c.SubscriberStore.Get(nodeID)
 	if err != nil {
 		return fmt.Errorf("failed looking for node %v: %w", nodeID, err)
 	} else if !known {
@@ -141,7 +141,7 @@ func (c *Worker) OnAncestry(s *sprout.Conn, messageID sprout.MessageID, nodeID *
 			// no parent, we're done
 			break
 		}
-		parentNode, known, err := c.MessageStore.Get(currentNode.ParentID())
+		parentNode, known, err := c.SubscriberStore.Get(currentNode.ParentID())
 		if err != nil {
 			return fmt.Errorf("couldn't look up node with id %v (parent of %v): %w", currentNode.ParentID(), currentNode.ID(), err)
 		} else if !known {
@@ -163,12 +163,12 @@ func (c *Worker) OnLeavesOf(s *sprout.Conn, messageID sprout.MessageID, nodeID *
 		current := descendants[0]
 		descendants = descendants[1:]
 		seen[current.String()] = struct{}{}
-		children, err := c.MessageStore.store.Children(current)
+		children, err := c.SubscriberStore.Children(current)
 		if err != nil {
 			return fmt.Errorf("failed fetching children for %v: %w", current, err)
 		}
 		if len(children) == 0 {
-			node, has, err := c.MessageStore.Get(current)
+			node, has, err := c.SubscriberStore.Get(current)
 			if err != nil {
 				return fmt.Errorf("failed fetching node for %v: %w", current, err)
 			} else if !has {
@@ -188,7 +188,7 @@ func (c *Worker) OnLeavesOf(s *sprout.Conn, messageID sprout.MessageID, nodeID *
 
 func (c *Worker) OnResponse(s *sprout.Conn, target sprout.MessageID, nodes []forest.Node) error {
 	for _, node := range nodes {
-		if err := c.MessageStore.AddAs(node, c.subscriptionID); err != nil {
+		if err := c.SubscriberStore.AddAs(node, c.subscriptionID); err != nil {
 			return fmt.Errorf("failed to add node to store: %w", err)
 		}
 	}
@@ -231,12 +231,12 @@ func (c *Worker) OnAnnounce(s *sprout.Conn, messageID sprout.MessageID, nodes []
 	for _, node := range nodes {
 		switch n := node.(type) {
 		case *forest.Identity:
-			err = c.MessageStore.AddAs(n, c.subscriptionID)
+			err = c.SubscriberStore.AddAs(n, c.subscriptionID)
 		case *forest.Community:
-			err = c.MessageStore.AddAs(n, c.subscriptionID)
+			err = c.SubscriberStore.AddAs(n, c.subscriptionID)
 		case *forest.Reply:
 			if c.Session.IsSubscribed(&n.CommunityID) {
-				err = c.MessageStore.AddAs(n, c.subscriptionID)
+				err = c.SubscriberStore.AddAs(n, c.subscriptionID)
 			}
 		default:
 			err = fmt.Errorf("Unknown node type announced: %T", node)

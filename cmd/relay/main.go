@@ -63,7 +63,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 		log.Fatalf("Failed to create grove at %s: %v", *grovePath, err)
 	}
 
-	messages := NewMessageStore(grove)
+	messages := sprout.NewSubscriberStore(grove)
 	defer messages.Destroy()
 
 	go func() {
