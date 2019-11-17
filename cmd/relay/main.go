@@ -101,7 +101,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 				log.Printf("Failed accepting connection: %v", err)
 				continue
 			}
-			worker, err := NewWorker(done, conn, messages)
+			worker, err := sprout.NewWorker(done, conn, messages)
 			if err != nil {
 				log.Printf("Failed launching worker: %v", err)
 				continue
@@ -130,7 +130,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 			log.Printf("Failed to connect to %s: %v", address, err)
 			continue
 		}
-		worker, err := NewWorker(done, conn, messages)
+		worker, err := sprout.NewWorker(done, conn, messages)
 		if err != nil {
 			log.Printf("Failed launching worker to connect to address %s: %v", address, err)
 			continue

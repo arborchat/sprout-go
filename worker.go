@@ -1,4 +1,4 @@
-package main
+package sprout
 
 import (
 	"fmt"
@@ -7,7 +7,6 @@ import (
 
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
-	sprout "git.sr.ht/~whereswaldon/sprout-go"
 )
 
 type SubscribableStore interface {
@@ -19,9 +18,9 @@ type SubscribableStore interface {
 
 type Worker struct {
 	Done <-chan struct{}
-	*sprout.Conn
+	*Conn
 	*log.Logger
-	*sprout.Session
+	*Session
 	SubscribableStore
 	subscriptionID int
 }
@@ -32,11 +31,11 @@ func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*W
 		SubscribableStore: store,
 	}
 	var err error
-	w.Conn, err = sprout.NewConn(conn)
+	w.Conn, err = NewConn(conn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sprout conn: %w", err)
 	}
-	w.Session = sprout.NewSession()
+	w.Session = NewSession()
 	w.Conn.OnVersion = w.OnVersion
 	w.Conn.OnList = w.OnList
 	w.Conn.OnQuery = w.OnQuery
@@ -93,27 +92,27 @@ func (c *Worker) HandleNewNode(node forest.Node) {
 	}
 }
 
-func (c *Worker) OnVersion(s *sprout.Conn, messageID sprout.MessageID, major, minor int) error {
+func (c *Worker) OnVersion(s *Conn, messageID MessageID, major, minor int) error {
 	c.Printf("Received version: id:%d major:%d minor:%d", messageID, major, minor)
-	if major < sprout.CurrentMajor {
-		if err := s.SendStatus(messageID, sprout.ErrorProtocolTooOld); err != nil {
+	if major < CurrentMajor {
+		if err := s.SendStatus(messageID, ErrorProtocolTooOld); err != nil {
 			return fmt.Errorf("Failed to send protocol too old message: %w", err)
 		}
 		return nil
 	}
-	if major > sprout.CurrentMajor {
-		if err := s.SendStatus(messageID, sprout.ErrorProtocolTooNew); err != nil {
+	if major > CurrentMajor {
+		if err := s.SendStatus(messageID, ErrorProtocolTooNew); err != nil {
 			return fmt.Errorf("Failed to send protocol too new message: %w", err)
 		}
 		return nil
 	}
-	if err := s.SendStatus(messageID, sprout.StatusOk); err != nil {
+	if err := s.SendStatus(messageID, StatusOk); err != nil {
 		return fmt.Errorf("Failed to send okay message: %w", err)
 	}
 	return nil
 }
 
-func (c *Worker) OnList(s *sprout.Conn, messageID sprout.MessageID, nodeType fields.NodeType, quantity int) error {
+func (c *Worker) OnList(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error {
 	// requires better iteration on Store types
 	nodes, err := c.SubscribableStore.Recent(nodeType, quantity)
 	if err != nil {
@@ -122,7 +121,7 @@ func (c *Worker) OnList(s *sprout.Conn, messageID sprout.MessageID, nodeType fie
 	return s.SendResponse(messageID, nodes)
 }
 
-func (c *Worker) OnQuery(s *sprout.Conn, messageID sprout.MessageID, nodeIds []*fields.QualifiedHash) error {
+func (c *Worker) OnQuery(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error {
 	results := make([]forest.Node, 0, len(nodeIds))
 	for _, id := range nodeIds {
 		node, present, err := c.SubscribableStore.Get(id)
@@ -135,7 +134,7 @@ func (c *Worker) OnQuery(s *sprout.Conn, messageID sprout.MessageID, nodeIds []*
 	return s.SendResponse(messageID, results)
 }
 
-func (c *Worker) OnAncestry(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
+func (c *Worker) OnAncestry(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, levels int) error {
 	ancestors := make([]forest.Node, 0, 1024)
 	currentNode, known, err := c.SubscribableStore.Get(nodeID)
 	if err != nil {
@@ -161,7 +160,7 @@ func (c *Worker) OnAncestry(s *sprout.Conn, messageID sprout.MessageID, nodeID *
 	return s.SendResponse(messageID, ancestors)
 }
 
-func (c *Worker) OnLeavesOf(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
+func (c *Worker) OnLeavesOf(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error {
 	descendants := make([]*fields.QualifiedHash, 0, 1024)
 	descendants = append(descendants, nodeID)
 	leaves := make([]forest.Node, 0, 1024)
@@ -193,7 +192,7 @@ func (c *Worker) OnLeavesOf(s *sprout.Conn, messageID sprout.MessageID, nodeID *
 	return s.SendResponse(messageID, leaves)
 }
 
-func (c *Worker) OnResponse(s *sprout.Conn, target sprout.MessageID, nodes []forest.Node) error {
+func (c *Worker) OnResponse(s *Conn, target MessageID, nodes []forest.Node) error {
 	for _, node := range nodes {
 		if err := c.SubscribableStore.AddAs(node, c.subscriptionID); err != nil {
 			return fmt.Errorf("failed to add node to store: %w", err)
@@ -202,38 +201,38 @@ func (c *Worker) OnResponse(s *sprout.Conn, target sprout.MessageID, nodes []for
 	return nil
 }
 
-func (c *Worker) OnSubscribe(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash) (err error) {
+func (c *Worker) OnSubscribe(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("Error during subscribe: %w", err)
 		}
 	}()
 	c.Subscribe(nodeID)
-	if err := s.SendStatus(messageID, sprout.StatusOk); err != nil {
+	if err := s.SendStatus(messageID, StatusOk); err != nil {
 		return fmt.Errorf("Failed to send okay status: %w", err)
 	}
 	return nil
 }
 
-func (c *Worker) OnUnsubscribe(s *sprout.Conn, messageID sprout.MessageID, nodeID *fields.QualifiedHash) (err error) {
+func (c *Worker) OnUnsubscribe(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) (err error) {
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("Error during unsubscribe: %w", err)
 		}
 	}()
 	c.Unsubscribe(nodeID)
-	if err := s.SendStatus(messageID, sprout.StatusOk); err != nil {
+	if err := s.SendStatus(messageID, StatusOk); err != nil {
 		return fmt.Errorf("Failed to send okay status: %w", err)
 	}
 	return nil
 }
 
-func (c *Worker) OnStatus(s *sprout.Conn, messageID sprout.MessageID, code sprout.StatusCode) error {
+func (c *Worker) OnStatus(s *Conn, messageID MessageID, code StatusCode) error {
 	c.Printf("Received status %d for message %d", code, messageID)
 	return nil
 }
 
-func (c *Worker) OnAnnounce(s *sprout.Conn, messageID sprout.MessageID, nodes []forest.Node) error {
+func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
 	var err error
 	for _, node := range nodes {
 		switch n := node.(type) {
@@ -252,5 +251,5 @@ func (c *Worker) OnAnnounce(s *sprout.Conn, messageID sprout.MessageID, nodes []
 	if err != nil {
 		return fmt.Errorf("Failed handling announce node: %w", err)
 	}
-	return s.SendStatus(messageID, sprout.StatusOk)
+	return s.SendStatus(messageID, StatusOk)
 }
