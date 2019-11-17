@@ -189,6 +189,9 @@ func (c *Worker) OnLeavesOf(s *Conn, messageID MessageID, nodeID *fields.Qualifi
 			}
 		}
 	}
+	if len(leaves) > quantity {
+		leaves = leaves[:quantity]
+	}
 	return s.SendResponse(messageID, leaves)
 }
 
