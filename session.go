@@ -1,4 +1,4 @@
-package main
+package sprout
 
 import (
 	"sync"
@@ -6,6 +6,8 @@ import (
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 )
 
+// Session stores the state of a sprout connection between hosts,
+// which is currently just the subscribed community set.
 type Session struct {
 	sync.RWMutex
 	Communities map[*fields.QualifiedHash]struct{}

@@ -21,7 +21,7 @@ type Worker struct {
 	Done <-chan struct{}
 	*sprout.Conn
 	*log.Logger
-	*Session
+	*sprout.Session
 	SubscribableStore
 	subscriptionID int
 }
@@ -36,7 +36,7 @@ func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*W
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sprout conn: %w", err)
 	}
-	w.Session = NewSession()
+	w.Session = sprout.NewSession()
 	w.Conn.OnVersion = w.OnVersion
 	w.Conn.OnList = w.OnList
 	w.Conn.OnQuery = w.OnQuery
