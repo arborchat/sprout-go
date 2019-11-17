@@ -20,6 +20,7 @@ func main() {
 	certpath := flag.String("certpath", "", "Location of the TLS public key (certificate file)")
 	keypath := flag.String("keypath", "", "Location of the TLS private key (key file)")
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
+	selftest := flag.Bool("selftest", false, "Dial yourself to verify that basic connection handling is working")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
@@ -66,8 +67,36 @@ and will establish Sprout connections to all addresses provided as arguments.
 	messages := sprout.NewSubscriberStore(grove)
 	defer messages.Destroy()
 
+	// start listening for new connections
 	go func() {
 		workerCount := 0
+		for {
+			log.Printf("Waiting for connections...")
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("Failed accepting connection: %v", err)
+				continue
+			}
+			worker, err := sprout.NewWorker(done, conn, messages)
+			if err != nil {
+				log.Printf("Failed launching worker: %v", err)
+				continue
+			}
+			worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%d ", workerCount), log.Flags())
+			go worker.Run()
+			log.Printf("Launched worker-%d to handle new connection", workerCount)
+			workerCount++
+			select {
+			case <-done:
+				log.Printf("Done channel closed")
+				return
+			default:
+			}
+		}
+	}()
+
+	// connect to ourselves as a test if requested
+	if *selftest {
 		go func() {
 			time.Sleep(time.Second)
 			log.Printf("Launching test connection to verify basic functionality")
@@ -94,30 +123,9 @@ and will establish Sprout connections to all addresses provided as arguments.
 				log.Printf("Failed to send version information from test conn: %v", err)
 			}
 		}()
-		for {
-			log.Printf("Waiting for connections...")
-			conn, err := listener.Accept()
-			if err != nil {
-				log.Printf("Failed accepting connection: %v", err)
-				continue
-			}
-			worker, err := sprout.NewWorker(done, conn, messages)
-			if err != nil {
-				log.Printf("Failed launching worker: %v", err)
-				continue
-			}
-			worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%d ", workerCount), log.Flags())
-			go worker.Run()
-			log.Printf("Launched worker-%d to handle new connection", workerCount)
-			workerCount++
-			select {
-			case <-done:
-				log.Printf("Done channel closed")
-				return
-			default:
-			}
-		}
-	}()
+	}
+
+	// dial peers mentioned in arguments
 	for _, address := range flag.Args() {
 		var tlsConfig *tls.Config
 		if *insecure {
@@ -138,6 +146,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 		worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%v ", address), log.Flags())
 		go worker.Run()
 	}
+
 	// Block until a signal is received.
 	<-c
 	close(done)
