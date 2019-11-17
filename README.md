@@ -3,7 +3,7 @@
 [![builds.sr.ht status](https://builds.sr.ht/~whereswaldon/sprout-go.svg)](https://builds.sr.ht/~whereswaldon/sprout-go?)
 [![GoDoc](https://godoc.org/git.sr.ht/~whereswaldon/sprout-go?status.svg)](https://godoc.org/git.sr.ht/~whereswaldon/sprout-go)
 
-This is an implementation of the [Sprout Protocol](https://man.sr.ht/~whereswaldon/arborchat/specifications/sprout.md#response) in Go. It provides methods
+This is an implementation of the [Sprout Protocol](https://man.sr.ht/~whereswaldon/arborchat/specifications/sprout.md) in Go. It provides methods
 to send and receive protocol messages in Sprout. Sprout is one part of the
 Arbor Chat project.
 
