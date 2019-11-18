@@ -29,6 +29,7 @@ func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*W
 	w := &Worker{
 		Done:              done,
 		SubscribableStore: store,
+		Logger:            log.New(log.Writer(), "", log.LstdFlags|log.Lshortfile),
 	}
 	var err error
 	w.Conn, err = NewConn(conn)
