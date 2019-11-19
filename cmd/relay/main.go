@@ -4,13 +4,16 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"time"
 
+	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/grove"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
+	"git.sr.ht/~whereswaldon/sprout-go/watch"
 )
 
 func main() {
@@ -63,9 +66,31 @@ and will establish Sprout connections to all addresses provided as arguments.
 	if err != nil {
 		log.Fatalf("Failed to create grove at %s: %v", *grovePath, err)
 	}
-
 	messages := sprout.NewSubscriberStore(grove)
 	defer messages.Destroy()
+
+	watchLogger := log.New(log.Writer(), "watch", log.LstdFlags|log.Lshortfile)
+	_, err = watch.Watch(*grovePath, watchLogger, func(filename string) {
+		data, err := ioutil.ReadFile(filename)
+		if err != nil {
+			watchLogger.Printf("Failed reading watched file: %s: %v", filename, err)
+			return
+		}
+		node, err := forest.UnmarshalBinaryNode(data)
+		if err != nil {
+			watchLogger.Printf("Failed unmarshalling watched file: %s: %v", filename, err)
+			return
+		}
+		if err := node.ValidateDeep(messages); err != nil {
+			watchLogger.Printf("Failed validating node from watched file: %s: %v", filename, err)
+			return
+
+		}
+		if err := messages.Add(node); err != nil {
+			watchLogger.Printf("Failed adding node from watched file: %s: %v", filename, err)
+			return
+		}
+	})
 
 	// start listening for new connections
 	go func() {
