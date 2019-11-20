@@ -76,7 +76,6 @@ func (c *Worker) Run() {
 }
 
 func (c *Worker) HandleNewNode(node forest.Node) {
-	log.Printf("Got new node: %v", node)
 	switch n := node.(type) {
 	case *forest.Identity:
 		// shouldn't just announce random user ids unsolicted
