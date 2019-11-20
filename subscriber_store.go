@@ -151,6 +151,11 @@ func (m *SubscriberStore) Add(node forest.Node) (err error) {
 	m.requests <- func() {
 		defer close(done)
 		err = m.store.Add(node)
+		if err == nil {
+			for _, handler := range m.subscribers {
+				handler(node)
+			}
+		}
 	}
 	<-done
 	return
