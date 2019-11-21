@@ -174,32 +174,43 @@ and will establish Sprout connections to all addresses provided as arguments.
 		go func() {
 			// This goroutine is a hack to prefetch and subscribe to all content known by the
 			// peer. As we improve the sprout API, this will get a lot less gross.
-			quantityOfCommunitiesToTry := 1024
-			_, err := worker.SendList(fields.NodeTypeCommunity, quantityOfCommunitiesToTry)
+			quantityOfNodesToTry := 1024
+			_, err := worker.SendList(fields.NodeTypeIdentity, quantityOfNodesToTry)
 			if err != nil {
-				log.Printf("Failed attempting to learn all existing communities: %v", err)
+				worker.Printf("Failed attempting to learn all existing communities: %v", err)
+			}
+			// Wait until we have received all identities before attempting to list communities
+			// since we can't validate them without their author's Identity file.
+			time.Sleep(time.Second)
+			_, err = worker.SendList(fields.NodeTypeCommunity, quantityOfNodesToTry)
+			if err != nil {
+				worker.Printf("Failed attempting to learn all existing communities: %v", err)
 			}
 			// Wait until we might have received all communities before attempting to subscribe.
 			// This is super racy, but we can eliminate that once you can block waiting for the
 			// response to a *specific* protocol message.
 			time.Sleep(time.Second)
-			communities, err := grove.Recent(fields.NodeTypeCommunity, quantityOfCommunitiesToTry)
+			communities, err := grove.Recent(fields.NodeTypeCommunity, quantityOfNodesToTry)
 			if err != nil {
-				log.Printf("Failed listing known communities: %v", err)
+				worker.Printf("Failed listing known communities: %v", err)
 			}
 			for _, community := range communities {
 				_, err := worker.SendSubscribe(community.(*forest.Community))
 				if err != nil {
-					log.Printf("Failed subscribing to %s", community.ID().String())
+					worker.Printf("Failed subscribing to %s", community.ID().String())
+					continue
 				}
-				_, err = worker.SendLeavesOf(community.ID(), quantityOfCommunitiesToTry)
+				worker.Session.Subscribe(community.ID())
+				worker.Printf("Subscribed to community %s", community.ID().String())
+				_, err = worker.SendLeavesOf(community.ID(), quantityOfNodesToTry)
 				if err != nil {
-					log.Printf("Failed requesting leaves of %s", community.ID().String())
+					worker.Printf("Failed requesting leaves of %s", community.ID().String())
+					continue
 				}
 			}
-			_, err = worker.SendList(fields.NodeTypeReply, quantityOfCommunitiesToTry)
+			_, err = worker.SendList(fields.NodeTypeReply, quantityOfNodesToTry)
 			if err != nil {
-				log.Printf("Failed listing %d replies from peer: %v", quantityOfCommunitiesToTry, err)
+				worker.Printf("Failed listing %d replies from peer: %v", quantityOfNodesToTry, err)
 			}
 		}()
 	}
