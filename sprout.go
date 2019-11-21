@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	forest "git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
@@ -51,6 +52,7 @@ type Conn struct {
 	BufferedConn  io.Reader
 	Major, Minor  int
 	nextMessageID MessageID
+	sync.Mutex
 
 	OnVersion     func(s *Conn, messageID MessageID, major, minor int) error
 	OnList        func(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error
@@ -96,6 +98,8 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	opts[0] = messageIDIn
 	opts = append(opts, fmtArgs...)
 	messageID = messageIDIn
+	s.Lock()
+	defer s.Unlock()
 	_, err = fmt.Fprintf(s.Conn, format, opts...)
 	return messageID, err
 }
