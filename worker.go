@@ -238,6 +238,7 @@ func (c *Worker) OnStatus(s *Conn, messageID MessageID, code StatusCode) error {
 func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
 	var err error
 	for _, node := range nodes {
+		c.Printf("Handling announcement for node %s", node.ID().String())
 		switch n := node.(type) {
 		case *forest.Identity:
 			err = c.SubscribableStore.AddAs(n, c.subscriptionID)
@@ -246,6 +247,8 @@ func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) e
 		case *forest.Reply:
 			if c.Session.IsSubscribed(&n.CommunityID) {
 				err = c.SubscribableStore.AddAs(n, c.subscriptionID)
+			} else {
+				err = fmt.Errorf("received annoucement for reply %s in non-subscribed community %s", n.ID().String(), n.CommunityID.String())
 			}
 		default:
 			err = fmt.Errorf("Unknown node type announced: %T", node)
