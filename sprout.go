@@ -407,11 +407,11 @@ func (s *Conn) readNodeLines(count int) ([]forest.Node, error) {
 		}
 		id := &fields.QualifiedHash{}
 		if err := id.UnmarshalText([]byte(idString)); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal node line: %v", err)
+			return nil, fmt.Errorf("failed to unmarshal node id %s: %v", idString, err)
 		}
 		node, err := NodeFromBase64(nodeString)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read node: %v", err)
+			return nil, fmt.Errorf("failed to read node %s: %v", nodeString, err)
 		}
 		if !node.ID().Equals(id) {
 			expectedIDString, _ := id.MarshalText()
