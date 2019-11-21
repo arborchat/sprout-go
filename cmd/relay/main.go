@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
+	"git.sr.ht/~whereswaldon/forest-go/fields"
 	"git.sr.ht/~whereswaldon/forest-go/grove"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 	"git.sr.ht/~whereswaldon/sprout-go/watch"
@@ -170,6 +171,37 @@ and will establish Sprout connections to all addresses provided as arguments.
 		}
 		worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%v ", address), log.Flags())
 		go worker.Run()
+		go func() {
+			// This goroutine is a hack to prefetch and subscribe to all content known by the
+			// peer. As we improve the sprout API, this will get a lot less gross.
+			quantityOfCommunitiesToTry := 1024
+			_, err := worker.SendList(fields.NodeTypeCommunity, quantityOfCommunitiesToTry)
+			if err != nil {
+				log.Printf("Failed attempting to learn all existing communities: %v", err)
+			}
+			// Wait until we might have received all communities before attempting to subscribe.
+			// This is super racy, but we can eliminate that once you can block waiting for the
+			// response to a *specific* protocol message.
+			time.Sleep(time.Second)
+			communities, err := grove.Recent(fields.NodeTypeCommunity, quantityOfCommunitiesToTry)
+			if err != nil {
+				log.Printf("Failed listing known communities: %v", err)
+			}
+			for _, community := range communities {
+				_, err := worker.SendSubscribe(community.(*forest.Community))
+				if err != nil {
+					log.Printf("Failed subscribing to %s", community.ID().String())
+				}
+				_, err = worker.SendLeavesOf(community.ID(), quantityOfCommunitiesToTry)
+				if err != nil {
+					log.Printf("Failed requesting leaves of %s", community.ID().String())
+				}
+			}
+			_, err = worker.SendList(fields.NodeTypeReply, quantityOfCommunitiesToTry)
+			if err != nil {
+				log.Printf("Failed listing %d replies from peer: %v", quantityOfCommunitiesToTry, err)
+			}
+		}()
 	}
 
 	// Block until a signal is received.
