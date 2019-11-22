@@ -99,6 +99,42 @@ func TestVersionMessage(t *testing.T) {
 	}
 }
 
+func TestVersionMessageAsync(t *testing.T) {
+	conn := new(LoopbackConn)
+	sconn, err := sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnVersion = func(s *sprout.Conn, m sprout.MessageID, major, minor int) error {
+		if sconn.Major != major {
+			t.Fatalf("major version mismatch, expected %d, got %d", sconn.Major, major)
+		} else if sconn.Minor != minor {
+			t.Fatalf("minor version mismatch, expected %d, got %d", sconn.Minor, minor)
+		}
+		return s.SendStatus(m, sprout.StatusOk)
+	}
+	statusChan, err := sconn.SendVersionAsync()
+	if err != nil {
+		t.Fatalf("failed to send version: %v", err)
+	}
+	go func() {
+		for _ = range []int{1, 2} {
+			if err := sconn.ReadMessage(); err != nil {
+				t.Fatalf("failed reading version message: %v", err)
+			}
+		}
+	}()
+	var status sprout.Status
+	select {
+	case status = <-statusChan:
+	case <-time.NewTicker(10 * time.Second).C:
+		t.Fatalf("Timed out waiting for status response")
+	}
+	if status.Code != sprout.StatusOk {
+		t.Fatalf("version status returned non-okay status: %d", status.Code)
+	}
+}
+
 func TestQueryAnyMessage(t *testing.T) {
 	var (
 		inID, outID             sprout.MessageID

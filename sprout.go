@@ -22,37 +22,50 @@ type MessageID int
 type Verb string
 
 const (
-	Version     Verb = "version"
-	List        Verb = "list"
-	Query       Verb = "query"
-	Ancestry    Verb = "ancestry"
-	LeavesOf    Verb = "leaves_of"
-	Subscribe   Verb = "subscribe"
-	Unsubscribe Verb = "unsubscribe"
-	Announce    Verb = "announce"
-	Response    Verb = "response"
-	Status      Verb = "status"
+	VersionVerb     Verb = "version"
+	ListVerb        Verb = "list"
+	QueryVerb       Verb = "query"
+	AncestryVerb    Verb = "ancestry"
+	LeavesOfVerb    Verb = "leaves_of"
+	SubscribeVerb   Verb = "subscribe"
+	UnsubscribeVerb Verb = "unsubscribe"
+	AnnounceVerb    Verb = "announce"
+	ResponseVerb    Verb = "response"
+	StatusVerb      Verb = "status"
 )
 
 var formats = map[Verb]string{
-	Version:     " %d %d.%d\n",
-	List:        " %d %d %d\n",
-	Query:       " %d %d\n",
-	Ancestry:    " %d %s %d\n",
-	LeavesOf:    " %d %s %d\n",
-	Subscribe:   " %d %s\n",
-	Unsubscribe: " %d %s\n",
-	Announce:    " %d %d\n",
-	Response:    " %d %d\n",
-	Status:      " %d %d\n",
+	VersionVerb:     " %d %d.%d\n",
+	ListVerb:        " %d %d %d\n",
+	QueryVerb:       " %d %d\n",
+	AncestryVerb:    " %d %s %d\n",
+	LeavesOfVerb:    " %d %s %d\n",
+	SubscribeVerb:   " %d %s\n",
+	UnsubscribeVerb: " %d %s\n",
+	AnnounceVerb:    " %d %d\n",
+	ResponseVerb:    " %d %d\n",
+	StatusVerb:      " %d %d\n",
+}
+
+type Status struct {
+	Code StatusCode
 }
 
 type Conn struct {
-	Conn          io.ReadWriteCloser
-	BufferedConn  io.Reader
-	Major, Minor  int
-	nextMessageID MessageID
+	// Write side of connection, synchronized with mutex
 	sync.Mutex
+	Conn io.ReadWriteCloser
+
+	// Read side of connection, buffered for parse simplicity
+	BufferedConn io.Reader
+
+	// Protocol version in use
+	Major, Minor int
+
+	nextMessageID MessageID
+
+	// Map from messageID to channel waiting for response
+	PendingStatus sync.Map
 
 	OnVersion     func(s *Conn, messageID MessageID, major, minor int) error
 	OnList        func(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error
@@ -88,6 +101,17 @@ func (s *Conn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (m
 	return s.writeMessageWithID(messageID, verb, format, fmtArgs...)
 }
 
+// writeStatusMessageAsync writes a message that expects a `status` response
+// and returns the channel on which that response will be provided.
+func (s *Conn) writeStatusMessageAsync(verb Verb, format string, fmtArgs ...interface{}) (statusChan chan Status, err error) {
+	messageID := s.nextMessageID
+	s.nextMessageID++
+	statusChan = make(chan Status)
+	s.PendingStatus.Store(messageID, statusChan)
+	_, err = s.writeMessageWithID(messageID, verb, format, fmtArgs...)
+	return statusChan, err
+}
+
 func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
 	defer func() {
 		if err != nil {
@@ -104,13 +128,18 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	return messageID, err
 }
 
+func (s *Conn) SendVersionAsync() (<-chan Status, error) {
+	op := VersionVerb
+	return s.writeStatusMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
+}
+
 func (s *Conn) SendVersion() (MessageID, error) {
-	op := Version
+	op := VersionVerb
 	return s.writeMessage(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int) (MessageID, error) {
-	op := List
+	op := ListVerb
 	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)
 }
 
@@ -121,19 +150,19 @@ func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
 		_, _ = builder.Write(b)
 		builder.WriteString("\n")
 	}
-	op := Query
+	op := QueryVerb
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), builder.String())
 }
 
 func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID, error) {
 	id, _ := nodeID.MarshalText()
-	op := Ancestry
+	op := AncestryVerb
 	return s.writeMessage(op, string(op)+formats[op], id, levels)
 }
 
 func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
 	id, _ := nodeId.MarshalText()
-	op := LeavesOf
+	op := LeavesOfVerb
 	return s.writeMessage(op, string(op)+formats[op], string(id), quantity)
 }
 
@@ -150,7 +179,7 @@ func (s *Conn) SendResponse(msgID MessageID, nodes []forest.Node) error {
 	for _, n := range nodes {
 		builder.WriteString(NodeLine(n))
 	}
-	op := Response
+	op := ResponseVerb
 	_, err := s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", len(nodes), builder.String())
 	return err
 }
@@ -165,19 +194,19 @@ func (s *Conn) subscribeOpID(op Verb, community *fields.QualifiedHash) (MessageI
 }
 
 func (s *Conn) SendSubscribe(community *forest.Community) (MessageID, error) {
-	return s.subscribeOp(Subscribe, community)
+	return s.subscribeOp(SubscribeVerb, community)
 }
 
 func (s *Conn) SendUnsubscribe(community *forest.Community) (MessageID, error) {
-	return s.subscribeOp(Unsubscribe, community)
+	return s.subscribeOp(UnsubscribeVerb, community)
 }
 
 func (s *Conn) SendSubscribeByID(community *fields.QualifiedHash) (MessageID, error) {
-	return s.subscribeOpID(Subscribe, community)
+	return s.subscribeOpID(SubscribeVerb, community)
 }
 
 func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash) (MessageID, error) {
-	return s.subscribeOpID(Unsubscribe, community)
+	return s.subscribeOpID(UnsubscribeVerb, community)
 }
 
 type StatusCode int
@@ -191,7 +220,7 @@ const (
 )
 
 func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error {
-	op := Status
+	op := StatusVerb
 	_, err := s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
 	return err
 }
@@ -201,7 +230,7 @@ func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error
 	for _, node := range nodes {
 		builder.WriteString(NodeLine(node))
 	}
-	op := Announce
+	op := AnnounceVerb
 
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), builder.String())
 }
@@ -226,7 +255,7 @@ func (s *Conn) ReadMessage() error {
 	}
 	verb := Verb(word)
 	switch verb {
-	case Version:
+	case VersionVerb:
 		var (
 			major, minor int
 			messageID    MessageID
@@ -240,7 +269,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnVersion(s, messageID, major, minor); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case List:
+	case ListVerb:
 		var (
 			messageID MessageID
 			nodeType  fields.NodeType
@@ -255,7 +284,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnList(s, messageID, nodeType, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case Query:
+	case QueryVerb:
 		var (
 			messageID MessageID
 			count     int
@@ -273,7 +302,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnQuery(s, messageID, ids); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case Ancestry:
+	case AncestryVerb:
 		var (
 			messageID    MessageID
 			nodeIDString string
@@ -293,7 +322,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnAncestry(s, messageID, id, levels); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case LeavesOf:
+	case LeavesOfVerb:
 		var (
 			messageID    MessageID
 			nodeIDString string
@@ -312,7 +341,7 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case Response:
+	case ResponseVerb:
 		var (
 			targetMessageID MessageID
 			count           int
@@ -330,9 +359,9 @@ func (s *Conn) ReadMessage() error {
 		if err := s.OnResponse(s, targetMessageID, nodes); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case Subscribe:
+	case SubscribeVerb:
 		fallthrough
-	case Unsubscribe:
+	case UnsubscribeVerb:
 		var (
 			messageID    MessageID
 			nodeIDString string
@@ -346,7 +375,7 @@ func (s *Conn) ReadMessage() error {
 		}
 
 		hook := s.OnSubscribe
-		if verb == Unsubscribe {
+		if verb == UnsubscribeVerb {
 			hook = s.OnUnsubscribe
 		}
 		if hook == nil {
@@ -355,21 +384,26 @@ func (s *Conn) ReadMessage() error {
 		if err := hook(s, messageID, id); err != nil {
 			return fmt.Errorf("error running hook for %s: %v", verb, err)
 		}
-	case Status:
+	case StatusVerb:
 		var (
-			errorCode StatusCode
+			status    Status
 			messageID MessageID
 		)
-		if err := s.scanOp(verb, &messageID, &errorCode); err != nil {
+		if err := s.scanOp(verb, &messageID, &status.Code); err != nil {
 			return err
 		}
-		if s.OnStatus == nil {
-			return fmt.Errorf("no handler set for verb %s", verb)
+		waitingChan, ok := s.PendingStatus.Load(messageID)
+		if !ok {
+			return fmt.Errorf("got status for message that wasn't waiting (id %d)", messageID)
 		}
-		if err := s.OnStatus(s, messageID, errorCode); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		s.PendingStatus.Delete(messageID)
+		statusChan, ok := waitingChan.(chan Status)
+		if !ok {
+			return fmt.Errorf("found item in map for message id %d, but isn't type chan Status, is %T", messageID, waitingChan)
 		}
-	case Announce:
+		statusChan <- status
+		close(statusChan)
+	case AnnounceVerb:
 		var (
 			messageID MessageID
 			count     int
