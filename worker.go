@@ -42,10 +42,8 @@ func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*W
 	w.Conn.OnQuery = w.OnQuery
 	w.Conn.OnAncestry = w.OnAncestry
 	w.Conn.OnLeavesOf = w.OnLeavesOf
-	w.Conn.OnResponse = w.OnResponse
 	w.Conn.OnSubscribe = w.OnSubscribe
 	w.Conn.OnUnsubscribe = w.OnUnsubscribe
-	w.Conn.OnStatus = w.OnStatus
 	w.Conn.OnAnnounce = w.OnAnnounce
 	return w, nil
 }
@@ -195,15 +193,6 @@ func (c *Worker) OnLeavesOf(s *Conn, messageID MessageID, nodeID *fields.Qualifi
 	return s.SendResponse(messageID, leaves)
 }
 
-func (c *Worker) OnResponse(s *Conn, target MessageID, nodes []forest.Node) error {
-	for _, node := range nodes {
-		if err := c.SubscribableStore.AddAs(node, c.subscriptionID); err != nil {
-			return fmt.Errorf("failed to add node to store: %w", err)
-		}
-	}
-	return nil
-}
-
 func (c *Worker) OnSubscribe(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) (err error) {
 	defer func() {
 		if err != nil {
@@ -227,11 +216,6 @@ func (c *Worker) OnUnsubscribe(s *Conn, messageID MessageID, nodeID *fields.Qual
 	if err := s.SendStatus(messageID, StatusOk); err != nil {
 		return fmt.Errorf("Failed to send okay status: %w", err)
 	}
-	return nil
-}
-
-func (c *Worker) OnStatus(s *Conn, messageID MessageID, code StatusCode) error {
-	c.Printf("Received status %d for message %d", code, messageID)
 	return nil
 }
 

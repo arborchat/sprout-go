@@ -51,6 +51,10 @@ type Status struct {
 	Code StatusCode
 }
 
+type Response struct {
+	Nodes []forest.Node
+}
+
 type Conn struct {
 	// Write side of connection, synchronized with mutex
 	sync.Mutex
@@ -72,10 +76,8 @@ type Conn struct {
 	OnQuery       func(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error
 	OnAncestry    func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, levels int) error
 	OnLeavesOf    func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error
-	OnResponse    func(s *Conn, targetMessageID MessageID, nodes []forest.Node) error
 	OnSubscribe   func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) error
 	OnUnsubscribe func(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) error
-	OnStatus      func(s *Conn, messageID MessageID, code StatusCode) error
 	OnAnnounce    func(s *Conn, messageID MessageID, nodes []forest.Node) error
 }
 
@@ -101,15 +103,15 @@ func (s *Conn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (m
 	return s.writeMessageWithID(messageID, verb, format, fmtArgs...)
 }
 
-// writeStatusMessageAsync writes a message that expects a `status` response
-// and returns the channel on which that response will be provided.
-func (s *Conn) writeStatusMessageAsync(verb Verb, format string, fmtArgs ...interface{}) (statusChan chan Status, err error) {
+// writeStatusMessageAsync writes a message that expects a `status` or `response`
+// message and returns the channel on which that response will be provided.
+func (s *Conn) writeMessageAsync(verb Verb, format string, fmtArgs ...interface{}) (responseChan chan interface{}, err error) {
 	messageID := s.nextMessageID
 	s.nextMessageID++
-	statusChan = make(chan Status)
-	s.PendingStatus.Store(messageID, statusChan)
+	responseChan = make(chan interface{})
+	s.PendingStatus.Store(messageID, responseChan)
 	_, err = s.writeMessageWithID(messageID, verb, format, fmtArgs...)
-	return statusChan, err
+	return responseChan, err
 }
 
 func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
@@ -128,9 +130,9 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	return messageID, err
 }
 
-func (s *Conn) SendVersionAsync() (<-chan Status, error) {
+func (s *Conn) SendVersionAsync() (<-chan interface{}, error) {
 	op := VersionVerb
-	return s.writeStatusMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
+	return s.writeMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
 func (s *Conn) SendVersion() (MessageID, error) {
@@ -143,15 +145,24 @@ func (s *Conn) SendList(nodeType fields.NodeType, quantity int) (MessageID, erro
 	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)
 }
 
-func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
+func stringifyNodeIDs(nodeIds ...*fields.QualifiedHash) string {
 	builder := &strings.Builder{}
 	for _, nodeId := range nodeIds {
 		b, _ := nodeId.MarshalText()
 		_, _ = builder.Write(b)
 		builder.WriteString("\n")
 	}
+	return builder.String()
+}
+
+func (s *Conn) SendQueryAsync(nodeIds ...*fields.QualifiedHash) (<-chan interface{}, error) {
 	op := QueryVerb
-	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), builder.String())
+	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
+}
+
+func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
+	op := QueryVerb
+	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
 
 func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID, error) {
@@ -242,6 +253,21 @@ func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 	} else if n < len(fields) {
 		return fmt.Errorf("failed to scan enough arguments for %s (got %d, expected %d)", verb, n, len(fields))
 	}
+	return nil
+}
+
+func (s *Conn) sendToWaitingChannel(data interface{}, messageID MessageID) error {
+	waitingChan, ok := s.PendingStatus.Load(messageID)
+	if !ok {
+		return fmt.Errorf("got status for message that wasn't waiting (id %d)", messageID)
+	}
+	s.PendingStatus.Delete(messageID)
+	statusChan, ok := waitingChan.(chan interface{})
+	if !ok {
+		return fmt.Errorf("found item in map for message id %d, but isn't type chan Status, is %T", messageID, waitingChan)
+	}
+	statusChan <- data
+	close(statusChan)
 	return nil
 }
 
@@ -345,19 +371,18 @@ func (s *Conn) ReadMessage() error {
 		var (
 			targetMessageID MessageID
 			count           int
+			response        Response
+			err             error
 		)
 		if err := s.scanOp(verb, &targetMessageID, &count); err != nil {
 			return err
 		}
-		nodes, err := s.readNodeLines(count)
+		response.Nodes, err = s.readNodeLines(count)
 		if err != nil {
 			return fmt.Errorf("failed reading response node list: %v", err)
 		}
-		if s.OnResponse == nil {
-			return fmt.Errorf("no handler set for verb %s", verb)
-		}
-		if err := s.OnResponse(s, targetMessageID, nodes); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+		if err := s.sendToWaitingChannel(response, targetMessageID); err != nil {
+			return fmt.Errorf("failed sending response to waiting channel: %w", err)
 		}
 	case SubscribeVerb:
 		fallthrough
@@ -390,19 +415,11 @@ func (s *Conn) ReadMessage() error {
 			messageID MessageID
 		)
 		if err := s.scanOp(verb, &messageID, &status.Code); err != nil {
-			return err
+			return fmt.Errorf("failed scanning status message: %w", err)
 		}
-		waitingChan, ok := s.PendingStatus.Load(messageID)
-		if !ok {
-			return fmt.Errorf("got status for message that wasn't waiting (id %d)", messageID)
+		if err := s.sendToWaitingChannel(status, messageID); err != nil {
+			return fmt.Errorf("failed sending status to waiting channel: %w", err)
 		}
-		s.PendingStatus.Delete(messageID)
-		statusChan, ok := waitingChan.(chan Status)
-		if !ok {
-			return fmt.Errorf("found item in map for message id %d, but isn't type chan Status, is %T", messageID, waitingChan)
-		}
-		statusChan <- status
-		close(statusChan)
 	case AnnounceVerb:
 		var (
 			messageID MessageID

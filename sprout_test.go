@@ -124,11 +124,15 @@ func TestVersionMessageAsync(t *testing.T) {
 			}
 		}
 	}()
-	var status sprout.Status
+	var result interface{}
 	select {
-	case status = <-statusChan:
+	case result = <-statusChan:
 	case <-time.NewTicker(10 * time.Second).C:
 		t.Fatalf("Timed out waiting for status response")
+	}
+	status, ok := result.(sprout.Status)
+	if !ok {
+		t.Fatalf("expected Status on channel, got %T:", result)
 	}
 	if status.Code != sprout.StatusOk {
 		t.Fatalf("version status returned non-okay status: %d", status.Code)
@@ -211,6 +215,64 @@ func randomIdentity(t *testing.T) *forest.Identity {
 		return nil
 	}
 	return id
+}
+
+func randomNodeSlice(length int, t *testing.T) ([]*fields.QualifiedHash, []forest.Node) {
+	ids := make([]*fields.QualifiedHash, length)
+	nodes := make([]forest.Node, length)
+	for i := 0; i < length; i++ {
+		identity := randomIdentity(t)
+		ids[i] = identity.ID()
+		nodes[i] = identity
+	}
+	return ids, nodes
+}
+
+func TestQueryMessageAsync(t *testing.T) {
+	var (
+		err   error
+		sconn *sprout.Conn
+	)
+	inNodeIDs, nodes := randomNodeSlice(10, t)
+
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnQuery = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
+		return s.SendResponse(m, nodes)
+	}
+	responseChan, err := sconn.SendQueryAsync(inNodeIDs...)
+	if err != nil {
+		t.Fatalf("failed to send query: %v", err)
+	}
+	go func() {
+		for i := 0; i < 2; i++ {
+			err = sconn.ReadMessage()
+			if err != nil {
+				t.Fatalf("failed to read message: %v", err)
+			}
+		}
+	}()
+	var responseGeneric interface{}
+	select {
+	case responseGeneric = <-responseChan:
+	case <-time.NewTicker(time.Second).C:
+		t.Fatalf("timed out waiting for response on channel")
+	}
+	response, ok := responseGeneric.(sprout.Response)
+	if !ok {
+		t.Fatalf("Expected to receive struct of type Response, got %T", responseGeneric)
+	}
+	if len(inNodeIDs) != len(response.Nodes) {
+		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(response.Nodes))
+	}
+	for i, n := range inNodeIDs {
+		if !n.Equals(response.Nodes[i].ID()) {
+			t.Fatalf("node id mismatch, expected %s got %s", n.String(), response.Nodes[i].ID().String())
+		}
+	}
 }
 
 func TestQueryMessage(t *testing.T) {
@@ -407,82 +469,6 @@ func TestUnsubscribeMessage(t *testing.T) {
 		inString, _ := inNodeID.MarshalText()
 		outString, _ := outNodeID.MarshalText()
 		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
-	}
-}
-
-func TestStatusMessage(t *testing.T) {
-	var (
-		inID, outID     sprout.MessageID
-		inCode, outCode sprout.StatusCode
-		err             error
-		sconn           *sprout.Conn
-	)
-	inID = 5
-	inCode = sprout.ErrorMalformed
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
-	sconn.OnStatus = func(s *sprout.Conn, target sprout.MessageID, code sprout.StatusCode) error {
-		outID = target
-		outCode = code
-		return nil
-	}
-	err = sconn.SendStatus(inID, inCode)
-	if err != nil {
-		t.Fatalf("failed to send error: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read error: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if inCode != outCode {
-		t.Fatalf("error code mismatch, expected %d, got %d", inCode, outCode)
-	}
-}
-
-func TestResponseMessage(t *testing.T) {
-	var (
-		inID, outID       sprout.MessageID
-		inNodes, outNodes []forest.Node
-		err               error
-		sconn             *sprout.Conn
-	)
-	const count = 3
-	inNodes = make([]forest.Node, count)
-	for i := range inNodes {
-		inNodes[i] = randomIdentity(t)
-	}
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
-	sconn.OnResponse = func(s *sprout.Conn, m sprout.MessageID, nodes []forest.Node) error {
-		outID = m
-		outNodes = nodes
-		return nil
-	}
-	err = sconn.SendResponse(inID, inNodes)
-	if err != nil {
-		t.Fatalf("failed to send response: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read response: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if len(inNodes) != len(outNodes) {
-		t.Fatalf("node list length mismatch, expected %d, got %d", len(inNodes), len(outNodes))
-	}
-	for i, node := range inNodes {
-		if !node.Equals(outNodes[i]) {
-			t.Fatalf("Node mismatch at index %d,\nin: %v\nout: %v", i, node, outNodes[i])
-		}
 	}
 }
 
