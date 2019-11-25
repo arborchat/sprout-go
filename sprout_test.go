@@ -139,7 +139,7 @@ func TestVersionMessageAsync(t *testing.T) {
 	}
 }
 
-func TestQueryAnyMessage(t *testing.T) {
+func TestListMessage(t *testing.T) {
 	var (
 		inID, outID             sprout.MessageID
 		inNodeType, outNodeType fields.NodeType
