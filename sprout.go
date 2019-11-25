@@ -140,6 +140,11 @@ func (s *Conn) SendVersion() (MessageID, error) {
 	return s.writeMessage(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
+func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan interface{}, error) {
+	op := ListVerb
+	return s.writeMessageAsync(op, string(op)+formats[op], nodeType, quantity)
+}
+
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int) (MessageID, error) {
 	op := ListVerb
 	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)

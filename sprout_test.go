@@ -117,26 +117,38 @@ func TestVersionMessageAsync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send version: %v", err)
 	}
-	go func() {
-		for i := 0; i < 2; i++ {
-			if err := sconn.ReadMessage(); err != nil {
-				t.Fatalf("failed reading version message: %v", err)
-			}
+	go readConnOrFail(sconn, 2, t)
+	verifyStatus(sprout.StatusOk, statusChan, t)
+}
+
+func TestListMessageAsync(t *testing.T) {
+	var (
+		err   error
+		sconn *sprout.Conn
+	)
+	inQuantity := 10
+	inNodeType := fields.NodeTypeIdentity
+	_, identities := randomNodeSlice(inQuantity, t)
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnList = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
+		if quantity != inQuantity {
+			t.Fatalf("requested %d nodes, but message requested %d", inQuantity, quantity)
 		}
-	}()
-	var result interface{}
-	select {
-	case result = <-statusChan:
-	case <-time.NewTicker(10 * time.Second).C:
-		t.Fatalf("Timed out waiting for status response")
+		if nodeType != inNodeType {
+			t.Fatalf("requested node type %d, but message requested type %d", inNodeType, nodeType)
+		}
+		return s.SendResponse(m, identities)
 	}
-	status, ok := result.(sprout.Status)
-	if !ok {
-		t.Fatalf("expected Status on channel, got %T:", result)
+	responseChan, err := sconn.SendListAsync(inNodeType, inQuantity)
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
 	}
-	if status.Code != sprout.StatusOk {
-		t.Fatalf("version status returned non-okay status: %d", status.Code)
-	}
+	go readConnOrFail(sconn, 2, t)
+	verifyResponse(identities, responseChan, t)
 }
 
 func TestListMessage(t *testing.T) {
@@ -247,14 +259,36 @@ func TestQueryMessageAsync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to send query: %v", err)
 	}
-	go func() {
-		for i := 0; i < 2; i++ {
-			err = sconn.ReadMessage()
-			if err != nil {
-				t.Fatalf("failed to read message: %v", err)
-			}
+	go readConnOrFail(sconn, 2, t)
+	verifyResponse(nodes, responseChan, t)
+}
+
+func readConnOrFail(sconn *sprout.Conn, times int, t *testing.T) {
+	for i := 0; i < times; i++ {
+		err := sconn.ReadMessage()
+		if err != nil {
+			t.Fatalf("failed to read message: %v", err)
 		}
-	}()
+	}
+}
+
+func verifyStatus(expected sprout.StatusCode, responseChan <-chan interface{}, t *testing.T) {
+	var result interface{}
+	select {
+	case result = <-responseChan:
+	case <-time.NewTicker(10 * time.Second).C:
+		t.Fatalf("Timed out waiting for status response")
+	}
+	status, ok := result.(sprout.Status)
+	if !ok {
+		t.Fatalf("expected Status on channel, got %T:", result)
+	}
+	if status.Code != expected {
+		t.Fatalf("version status returned status %d, expected status: %d", status.Code, expected)
+	}
+}
+
+func verifyResponse(nodes []forest.Node, responseChan <-chan interface{}, t *testing.T) {
 	var responseGeneric interface{}
 	select {
 	case responseGeneric = <-responseChan:
@@ -265,12 +299,12 @@ func TestQueryMessageAsync(t *testing.T) {
 	if !ok {
 		t.Fatalf("Expected to receive struct of type Response, got %T", responseGeneric)
 	}
-	if len(inNodeIDs) != len(response.Nodes) {
-		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(response.Nodes))
+	if len(nodes) != len(response.Nodes) {
+		t.Fatalf("node list length mismatch, expected %d, got %d", len(nodes), len(response.Nodes))
 	}
-	for i, n := range inNodeIDs {
-		if !n.Equals(response.Nodes[i].ID()) {
-			t.Fatalf("node id mismatch, expected %s got %s", n.String(), response.Nodes[i].ID().String())
+	for i, n := range nodes {
+		if !n.ID().Equals(response.Nodes[i].ID()) {
+			t.Fatalf("node mismatch, expected %s got %s", n.ID().String(), response.Nodes[i].ID().String())
 		}
 	}
 }
