@@ -122,15 +122,11 @@ func TestVersionMessageAsync(t *testing.T) {
 }
 
 func TestListMessageAsync(t *testing.T) {
-	var (
-		err   error
-		sconn *sprout.Conn
-	)
 	inQuantity := 10
 	inNodeType := fields.NodeTypeIdentity
 	_, identities := randomNodeSlice(inQuantity, t)
 	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
+	sconn, err := sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
@@ -241,14 +237,10 @@ func randomNodeSlice(length int, t *testing.T) ([]*fields.QualifiedHash, []fores
 }
 
 func TestQueryMessageAsync(t *testing.T) {
-	var (
-		err   error
-		sconn *sprout.Conn
-	)
 	inNodeIDs, nodes := randomNodeSlice(10, t)
 
 	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
+	sconn, err := sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
@@ -350,16 +342,12 @@ func TestQueryMessage(t *testing.T) {
 	}
 }
 func TestAncestryMessageAsync(t *testing.T) {
-	var (
-		err   error
-		sconn *sprout.Conn
-	)
 	inLevels := 5
 	_, nodes := randomNodeSlice(inLevels, t)
 	inNodeID := nodes[0].ID()
 
 	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
+	sconn, err := sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
