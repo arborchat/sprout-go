@@ -349,6 +349,36 @@ func TestQueryMessage(t *testing.T) {
 		}
 	}
 }
+func TestAncestryMessageAsync(t *testing.T) {
+	var (
+		err   error
+		sconn *sprout.Conn
+	)
+	inLevels := 5
+	_, nodes := randomNodeSlice(inLevels, t)
+	inNodeID := nodes[0].ID()
+
+	conn := new(LoopbackConn)
+	sconn, err = sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
+		if !inNodeID.Equals(nodeID) {
+			t.Fatalf("message requests ancestry for node %s, expected node %s", nodeID.String(), inNodeID.String())
+		}
+		if inLevels != levels {
+			t.Fatalf("message requests %d levels of ancestry, expected %d levels", levels, inLevels)
+		}
+		return sconn.SendResponse(m, nodes)
+	}
+	resultChan, err := sconn.SendAncestryAsync(inNodeID, inLevels)
+	if err != nil {
+		t.Fatalf("failed to send ancestry: %v", err)
+	}
+	go readConnOrFail(sconn, 2, t)
+	verifyResponse(nodes, resultChan, t)
+}
 
 func TestAncestryMessage(t *testing.T) {
 	var (

@@ -170,10 +170,14 @@ func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
 
-func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID, error) {
-	id, _ := nodeID.MarshalText()
+func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-chan interface{}, error) {
 	op := AncestryVerb
-	return s.writeMessage(op, string(op)+formats[op], id, levels)
+	return s.writeMessageAsync(op, string(op)+formats[op], nodeID.String(), levels)
+}
+
+func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID, error) {
+	op := AncestryVerb
+	return s.writeMessage(op, string(op)+formats[op], nodeID.String(), levels)
 }
 
 func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
