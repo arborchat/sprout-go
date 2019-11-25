@@ -410,6 +410,32 @@ func TestAncestryMessage(t *testing.T) {
 	}
 }
 
+func TestLeavesOfMessageAsync(t *testing.T) {
+	inQuantity := 5
+	_, nodes := randomNodeSlice(inQuantity, t)
+	inNodeID := nodes[0].ID()
+	conn := new(LoopbackConn)
+	sconn, err := sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnLeavesOf = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
+		if !inNodeID.Equals(nodeID) {
+			t.Fatalf("message requests leaves of node %s, but expected node %s", nodeID.String(), inNodeID.String())
+		}
+		if quantity != inQuantity {
+			t.Fatalf("message requests %d leaves, but expected to request %d", quantity, inQuantity)
+		}
+		return sconn.SendResponse(m, nodes)
+	}
+	resultChan, err := sconn.SendLeavesOfAsync(inNodeID, inQuantity)
+	if err != nil {
+		t.Fatalf("failed to send query_any: %v", err)
+	}
+	go readConnOrFail(sconn, 2, t)
+	verifyResponse(nodes, resultChan, t)
+}
+
 func TestLeavesOfMessage(t *testing.T) {
 	var (
 		inID, outID             sprout.MessageID

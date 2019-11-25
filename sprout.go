@@ -180,6 +180,11 @@ func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID
 	return s.writeMessage(op, string(op)+formats[op], nodeID.String(), levels)
 }
 
+func (s *Conn) SendLeavesOfAsync(nodeId *fields.QualifiedHash, quantity int) (<-chan interface{}, error) {
+	op := LeavesOfVerb
+	return s.writeMessageAsync(op, string(op)+formats[op], nodeId.String(), quantity)
+}
+
 func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
 	id, _ := nodeId.MarshalText()
 	op := LeavesOfVerb
