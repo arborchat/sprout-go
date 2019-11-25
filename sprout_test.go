@@ -118,7 +118,7 @@ func TestVersionMessageAsync(t *testing.T) {
 		t.Fatalf("failed to send version: %v", err)
 	}
 	go func() {
-		for _ = range []int{1, 2} {
+		for i := 0; i < 2; i++ {
 			if err := sconn.ReadMessage(); err != nil {
 				t.Fatalf("failed reading version message: %v", err)
 			}
