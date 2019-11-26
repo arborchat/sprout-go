@@ -78,12 +78,17 @@ func (t *TeeConn) Write(b []byte) (int, error) {
 
 var _ net.Conn = &TeeConn{}
 
-func TestVersionMessage(t *testing.T) {
+func mockConnOrFail(t *testing.T) (net.Conn, *sprout.Conn) {
 	conn := new(LoopbackConn)
 	sconn, err := sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
+	return conn, sconn
+}
+
+func TestVersionMessage(t *testing.T) {
+	_, sconn := mockConnOrFail(t)
 	sconn.OnVersion = func(s *sprout.Conn, m sprout.MessageID, major, minor int) error {
 		if major != sconn.Major {
 			t.Fatalf("major version received %d does not match sent version %d", major, sconn.Major)
@@ -104,11 +109,7 @@ func TestVersionMessage(t *testing.T) {
 }
 
 func TestVersionMessageAsync(t *testing.T) {
-	conn := new(LoopbackConn)
-	sconn, err := sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnVersion = func(s *sprout.Conn, m sprout.MessageID, major, minor int) error {
 		if sconn.Major != major {
 			t.Fatalf("major version mismatch, expected %d, got %d", sconn.Major, major)
@@ -129,11 +130,7 @@ func TestListMessageAsync(t *testing.T) {
 	inQuantity := 10
 	inNodeType := fields.NodeTypeIdentity
 	_, identities := randomNodeSlice(inQuantity, t)
-	conn := new(LoopbackConn)
-	sconn, err := sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnList = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
 		if quantity != inQuantity {
 			t.Fatalf("requested %d nodes, but message requested %d", inQuantity, quantity)
@@ -157,15 +154,10 @@ func TestListMessage(t *testing.T) {
 		inNodeType, outNodeType fields.NodeType
 		inQuantity, outQuantity int
 		err                     error
-		sconn                   *sprout.Conn
 	)
 	inNodeType = fields.NodeTypeCommunity
 	inQuantity = 5
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnList = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
 		outID = m
 		outNodeType = nodeType
@@ -243,11 +235,7 @@ func randomNodeSlice(length int, t *testing.T) ([]*fields.QualifiedHash, []fores
 func TestQueryMessageAsync(t *testing.T) {
 	inNodeIDs, nodes := randomNodeSlice(10, t)
 
-	conn := new(LoopbackConn)
-	sconn, err := sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnQuery = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
 		return s.SendResponse(m, nodes)
 	}
@@ -314,15 +302,10 @@ func TestQueryMessage(t *testing.T) {
 		inID, outID           sprout.MessageID
 		inNodeIDs, outNodeIDs []*fields.QualifiedHash
 		err                   error
-		sconn                 *sprout.Conn
 	)
 	inNodeIDs = randomQualifiedHashSlice(10)
 
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnQuery = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
 		outID = m
 		outNodeIDs = nodeIDs
@@ -354,11 +337,7 @@ func TestAncestryMessageAsync(t *testing.T) {
 	_, nodes := randomNodeSlice(inLevels, t)
 	inNodeID := nodes[0].ID()
 
-	conn := new(LoopbackConn)
-	sconn, err := sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
 		if !inNodeID.Equals(nodeID) {
 			t.Fatalf("message requests ancestry for node %s, expected node %s", nodeID.String(), inNodeID.String())
@@ -382,16 +361,11 @@ func TestAncestryMessage(t *testing.T) {
 		inNodeID, outNodeID *fields.QualifiedHash
 		inLevels, outLevels int
 		err                 error
-		sconn               *sprout.Conn
 	)
 	inNodeID = randomQualifiedHash()
 	inLevels = 5
 
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
 		outID = m
 		outNodeID = nodeID
@@ -422,11 +396,7 @@ func TestLeavesOfMessageAsync(t *testing.T) {
 	inQuantity := 5
 	_, nodes := randomNodeSlice(inQuantity, t)
 	inNodeID := nodes[0].ID()
-	conn := new(LoopbackConn)
-	sconn, err := sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnLeavesOf = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
 		if !inNodeID.Equals(nodeID) {
 			t.Fatalf("message requests leaves of node %s, but expected node %s", nodeID.String(), inNodeID.String())
@@ -450,15 +420,10 @@ func TestLeavesOfMessage(t *testing.T) {
 		inNodeID, outNodeID     *fields.QualifiedHash
 		inQuantity, outQuantity int
 		err                     error
-		sconn                   *sprout.Conn
 	)
 	inNodeID = randomQualifiedHash()
 	inQuantity = 5
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnLeavesOf = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
 		outID = m
 		outNodeID = nodeID
@@ -487,11 +452,7 @@ func TestLeavesOfMessage(t *testing.T) {
 func TestSubscribeMessageAsync(t *testing.T) {
 	inNodeID := randomQualifiedHash()
 
-	conn := new(LoopbackConn)
-	sconn, err := sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
 		if !nodeID.Equals(inNodeID) {
 			t.Fatalf("expected message to subscribe to %s, got %s", inNodeID.String(), nodeID.String())
@@ -525,15 +486,10 @@ func TestSubscribeMessage(t *testing.T) {
 		inID, outID         sprout.MessageID
 		inNodeID, outNodeID *fields.QualifiedHash
 		err                 error
-		sconn               *sprout.Conn
 	)
 	inNodeID = randomQualifiedHash()
 
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
 		outID = m
 		outNodeID = nodeID
@@ -562,15 +518,10 @@ func TestUnsubscribeMessage(t *testing.T) {
 		inID, outID         sprout.MessageID
 		inNodeID, outNodeID *fields.QualifiedHash
 		err                 error
-		sconn               *sprout.Conn
 	)
 	inNodeID = randomQualifiedHash()
 
-	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
-	if err != nil {
-		t.Fatalf("failed to construct sprout.Conn: %v", err)
-	}
+	_, sconn := mockConnOrFail(t)
 	sconn.OnUnsubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
 		outID = m
 		outNodeID = nodeID
