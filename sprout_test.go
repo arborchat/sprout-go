@@ -476,6 +476,42 @@ func TestLeavesOfMessage(t *testing.T) {
 	}
 }
 
+func TestSubscribeMessageAsync(t *testing.T) {
+	inNodeID := randomQualifiedHash()
+
+	conn := new(LoopbackConn)
+	sconn, err := sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
+		if !nodeID.Equals(inNodeID) {
+			t.Fatalf("expected message to subscribe to %s, got %s", inNodeID.String(), nodeID.String())
+		}
+		return s.SendStatus(m, sprout.StatusOk)
+	}
+	sconn.OnUnsubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
+		if !nodeID.Equals(inNodeID) {
+			t.Fatalf("expected message to subscribe to %s, got %s", inNodeID.String(), nodeID.String())
+		}
+		return s.SendStatus(m, sprout.StatusOk)
+	}
+
+	resultChan, err := sconn.SendSubscribeByIDAsync(inNodeID)
+	if err != nil {
+		t.Fatalf("failed to send subscribe: %v", err)
+	}
+	go readConnOrFail(sconn, 2, t)
+	verifyStatus(sprout.StatusOk, resultChan, t)
+
+	resultChan2, err := sconn.SendUnsubscribeByIDAsync(inNodeID)
+	if err != nil {
+		t.Fatalf("failed to send unsubscribe: %v", err)
+	}
+	go readConnOrFail(sconn, 2, t)
+	verifyStatus(sprout.StatusOk, resultChan2, t)
+}
+
 func TestSubscribeMessage(t *testing.T) {
 	var (
 		inID, outID         sprout.MessageID

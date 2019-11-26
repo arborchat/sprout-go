@@ -213,9 +213,32 @@ func (s *Conn) subscribeOp(op Verb, community *forest.Community) (MessageID, err
 	return s.subscribeOpID(op, community.ID())
 }
 
+func (s *Conn) subscribeOpAsync(op Verb, community *forest.Community) (<-chan interface{}, error) {
+	return s.subscribeOpIDAsync(op, community.ID())
+}
+
 func (s *Conn) subscribeOpID(op Verb, community *fields.QualifiedHash) (MessageID, error) {
-	id, _ := community.MarshalText()
-	return s.writeMessage(op, string(op)+formats[op], id)
+	return s.writeMessage(op, string(op)+formats[op], community.String())
+}
+
+func (s *Conn) subscribeOpIDAsync(op Verb, community *fields.QualifiedHash) (<-chan interface{}, error) {
+	return s.writeMessageAsync(op, string(op)+formats[op], community.String())
+}
+
+func (s *Conn) SendSubscribeAsync(community *forest.Community) (<-chan interface{}, error) {
+	return s.subscribeOpAsync(SubscribeVerb, community)
+}
+
+func (s *Conn) SendUnsubscribeAsync(community *forest.Community) (<-chan interface{}, error) {
+	return s.subscribeOpAsync(UnsubscribeVerb, community)
+}
+
+func (s *Conn) SendSubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, error) {
+	return s.subscribeOpIDAsync(SubscribeVerb, community)
+}
+
+func (s *Conn) SendUnsubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, error) {
+	return s.subscribeOpIDAsync(UnsubscribeVerb, community)
 }
 
 func (s *Conn) SendSubscribe(community *forest.Community) (MessageID, error) {
