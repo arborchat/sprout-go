@@ -187,9 +187,29 @@ func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan int
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeType, quantity)
 }
 
-func (s *Conn) SendList(nodeType fields.NodeType, quantity int) (MessageID, error) {
+func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := ListVerb
-	return s.writeMessage(op, string(op)+formats[op], nodeType, quantity)
+	resultChan, err := s.SendListAsync(nodeType, quantity)
+	if err != nil {
+		return Response{}, fmt.Errorf("failed sending %s message: %w", op, err)
+	}
+	select {
+	case result := <-resultChan:
+		asResponse, ok := result.(Response)
+		if ok {
+			return asResponse, nil
+		}
+		asStatus, ok := result.(Status)
+		if ok {
+			if asStatus.Code != StatusOk {
+				return Response{}, asStatus
+			}
+			return Response{}, fmt.Errorf("peer responded with status OK but should have been Response message")
+		}
+		return Response{}, fmt.Errorf("received non-Status, non-Response value on response channel (type %T)", result)
+	case <-timeoutChan:
+		return Response{}, fmt.Errorf("timed out waiting for response to %s message", op)
+	}
 }
 
 func stringifyNodeIDs(nodeIds ...*fields.QualifiedHash) string {

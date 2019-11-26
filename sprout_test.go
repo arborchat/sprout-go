@@ -146,35 +146,31 @@ func TestListMessageAsync(t *testing.T) {
 }
 
 func TestListMessage(t *testing.T) {
-	var (
-		inID, outID             sprout.MessageID
-		inNodeType, outNodeType fields.NodeType
-		inQuantity, outQuantity int
-		err                     error
-	)
-	inNodeType = fields.NodeTypeCommunity
-	inQuantity = 5
+	inNodeType := fields.NodeTypeIdentity
+	inQuantity := 5
+	_, identities := randomNodeSlice(inQuantity, t)
 	_, sconn := mockConnOrFail(t)
 	sconn.OnList = func(s *sprout.Conn, m sprout.MessageID, nodeType fields.NodeType, quantity int) error {
-		outID = m
-		outNodeType = nodeType
-		outQuantity = quantity
-		return nil
+		if quantity != inQuantity {
+			t.Fatalf("requested %d nodes, but message requested %d", inQuantity, quantity)
+		}
+		if nodeType != inNodeType {
+			t.Fatalf("requested node type %d, but message requested type %d", inNodeType, nodeType)
+		}
+		return s.SendResponse(m, identities)
 	}
-	inID, err = sconn.SendList(inNodeType, inQuantity)
+	go readConnOrFail(sconn, 2, t)
+	response, err := sconn.SendList(inNodeType, inQuantity, time.NewTicker(time.Second).C)
 	if err != nil {
-		t.Fatalf("failed to send query_any: %v", err)
+		t.Fatalf("failed to send list: %v", err)
 	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read query_any: %v", err)
+	if len(response.Nodes) != len(identities) {
+		t.Fatalf("expected response of length %d, got length %d", len(identities), len(response.Nodes))
 	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if inNodeType != outNodeType {
-		t.Fatalf("node type mismatch, expected %d, got %d", inNodeType, outNodeType)
-	} else if inQuantity != outQuantity {
-		t.Fatalf("quantity mismatch, expected %d, got %d", inQuantity, outQuantity)
+	for i := range identities {
+		if !identities[i].Equals(response.Nodes[i]) {
+			t.Fatalf("expected nodes[%d] to be %s, not %s", i, identities[i].ID().String(), response.Nodes[i].ID().String())
+		}
 	}
 }
 
