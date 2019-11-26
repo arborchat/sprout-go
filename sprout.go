@@ -52,6 +52,10 @@ type Status struct {
 	Code StatusCode
 }
 
+func (s Status) Error() string {
+	return fmt.Sprintf("%s", s.Code)
+}
+
 type Response struct {
 	Nodes []forest.Node
 }
@@ -276,6 +280,23 @@ const (
 	ErrorProtocolTooNew StatusCode = 3
 	ErrorUnknownNode    StatusCode = 4
 )
+
+func (s StatusCode) String() string {
+	description := ""
+	switch s {
+	case StatusOk:
+		description = "ok"
+	case ErrorMalformed:
+		description = "malformed protocol message"
+	case ErrorProtocolTooOld:
+		description = "protocol too old"
+	case ErrorProtocolTooNew:
+		description = "protocol too new"
+	case ErrorUnknownNode:
+		description = "referenced unknown node"
+	}
+	return fmt.Sprintf("status code %d (%s)", s, description)
+}
 
 func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error {
 	op := StatusVerb
