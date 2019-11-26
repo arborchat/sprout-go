@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	forest "git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
@@ -135,9 +136,18 @@ func (s *Conn) SendVersionAsync() (<-chan interface{}, error) {
 	return s.writeMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
-func (s *Conn) SendVersion() (MessageID, error) {
+func (s *Conn) SendVersion(timeoutChan <-chan time.Time) (Status, error) {
 	op := VersionVerb
-	return s.writeMessage(op, string(op)+formats[op], s.Major, s.Minor)
+	statusChan, err := s.SendVersionAsync()
+	if err != nil {
+		return Status{}, fmt.Errorf("failed sending %s message: %w", op, err)
+	}
+	select {
+	case status := <-statusChan:
+		return status.(Status), nil
+	case <-timeoutChan:
+		return Status{}, fmt.Errorf("timed out waiting for response to %s message", op)
+	}
 }
 
 func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan interface{}, error) {

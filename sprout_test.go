@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,31 +19,45 @@ import (
 
 type LoopbackConn struct {
 	bytes.Buffer
+	sync.Mutex
 }
 
-func (l LoopbackConn) Close() error {
+func (l *LoopbackConn) Read(b []byte) (int, error) {
+	l.Lock()
+	defer l.Unlock()
+	return l.Buffer.Read(b)
+}
+
+func (l *LoopbackConn) Write(b []byte) (int, error) {
+	l.Lock()
+	defer l.Unlock()
+	return l.Buffer.Write(b)
+}
+
+func (l *LoopbackConn) Close() error {
 	return nil
 }
 
-func (l LoopbackConn) LocalAddr() net.Addr {
+func (l *LoopbackConn) LocalAddr() net.Addr {
 	return &net.IPAddr{}
 }
 
-func (l LoopbackConn) RemoteAddr() net.Addr {
+func (l *LoopbackConn) RemoteAddr() net.Addr {
 	return &net.IPAddr{}
 }
 
-func (l LoopbackConn) SetDeadline(t time.Time) error {
+func (l *LoopbackConn) SetDeadline(t time.Time) error {
 	if err := l.SetReadDeadline(t); err != nil {
 		return err
 	}
 	return l.SetWriteDeadline(t)
 }
-func (l LoopbackConn) SetReadDeadline(t time.Time) error {
+
+func (l *LoopbackConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (l LoopbackConn) SetWriteDeadline(t time.Time) error {
+func (l *LoopbackConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
@@ -64,38 +79,27 @@ func (t *TeeConn) Write(b []byte) (int, error) {
 var _ net.Conn = &TeeConn{}
 
 func TestVersionMessage(t *testing.T) {
-	var (
-		outMajor    int
-		outMinor    int
-		inID, outID sprout.MessageID
-		err         error
-		sconn       *sprout.Conn
-	)
 	conn := new(LoopbackConn)
-	sconn, err = sprout.NewConn(conn)
+	sconn, err := sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
 	sconn.OnVersion = func(s *sprout.Conn, m sprout.MessageID, major, minor int) error {
-		outID = m
-		outMajor = major
-		outMinor = minor
-		return nil
+		if major != sconn.Major {
+			t.Fatalf("major version received %d does not match sent version %d", major, sconn.Major)
+		}
+		if minor != sconn.Minor {
+			t.Fatalf("minor version received %d does not match sent version %d", minor, sconn.Minor)
+		}
+		return sconn.SendStatus(m, sprout.StatusOk)
 	}
-	inID, err = sconn.SendVersion()
+	go readConnOrFail(sconn, 2, t)
+	status, err := sconn.SendVersion(time.NewTicker(time.Second).C)
 	if err != nil {
 		t.Fatalf("failed to send version: %v", err)
 	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to send version: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if sconn.Major != outMajor {
-		t.Fatalf("major version mismatch, expected %d, got %d", sconn.Major, outMajor)
-	} else if sconn.Minor != outMinor {
-		t.Fatalf("minor version mismatch, expected %d, got %d", sconn.Minor, outMinor)
+	if !(status.Code == sprout.StatusOk) {
+		t.Fatalf("expected status %d, got %d", sprout.StatusOk, status.Code)
 	}
 }
 
@@ -259,6 +263,10 @@ func readConnOrFail(sconn *sprout.Conn, times int, t *testing.T) {
 	for i := 0; i < times; i++ {
 		err := sconn.ReadMessage()
 		if err != nil {
+			if err == io.EOF {
+				i--
+				continue
+			}
 			t.Fatalf("failed to read message: %v", err)
 		}
 	}
@@ -683,7 +691,7 @@ func TestWithRealNetConn(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to make sprout.Conn from net.Conn: %v", err)
 		}
-		if _, err := sconn.SendVersion(); err != nil {
+		if _, err := sconn.SendVersion(nil); err != nil {
 			t.Fatalf("Failed to send version: %v", err)
 		}
 	}()
