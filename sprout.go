@@ -273,14 +273,22 @@ func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error
 	return err
 }
 
-func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
+func stringifyNodes(nodes []forest.Node) string {
 	builder := &strings.Builder{}
 	for _, node := range nodes {
 		builder.WriteString(NodeLine(node))
 	}
-	op := AnnounceVerb
+	return builder.String()
+}
 
-	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), builder.String())
+func (s *Conn) SendAnnounceAsync(nodes []forest.Node) (<-chan interface{}, error) {
+	op := AnnounceVerb
+	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodes), stringifyNodes(nodes))
+}
+
+func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
+	op := AnnounceVerb
+	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), stringifyNodes(nodes))
 }
 
 func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {

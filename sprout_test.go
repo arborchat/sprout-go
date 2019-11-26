@@ -586,6 +586,35 @@ func TestUnsubscribeMessage(t *testing.T) {
 	}
 }
 
+func TestAnnounceMessageAsync(t *testing.T) {
+	const count = 3
+	_, inNodes := randomNodeSlice(count, t)
+	conn := &LoopbackConn{}
+	sconn, err := sprout.NewConn(conn)
+	if err != nil {
+		t.Fatalf("failed to construct sprout.Conn: %v", err)
+	}
+	sconn.OnAnnounce = func(s *sprout.Conn, m sprout.MessageID, nodes []forest.Node) error {
+		if len(nodes) != len(inNodes) {
+			t.Fatalf("announced %d nodes, but got announcement for %d", len(inNodes), len(nodes))
+		} else {
+			for i := range nodes {
+				if !nodes[i].Equals(inNodes[i]) {
+					t.Fatalf("expected node at position %d to be %s, not %s", i, inNodes[i].ID().String(), nodes[i].ID().String())
+				}
+			}
+		}
+		return sconn.SendStatus(m, sprout.StatusOk)
+	}
+	statusChan, err := sconn.SendAnnounceAsync(inNodes)
+	if err != nil {
+		t.Fatalf("failed to send response: %v", err)
+	}
+	go readConnOrFail(sconn, 2, t)
+
+	verifyStatus(sprout.StatusOk, statusChan, t)
+}
+
 func TestAnnounceMessage(t *testing.T) {
 	var (
 		inID, outID       sprout.MessageID
