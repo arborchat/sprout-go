@@ -110,13 +110,13 @@ func (s *Conn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (m
 
 // writeStatusMessageAsync writes a message that expects a `status` or `response`
 // message and returns the channel on which that response will be provided.
-func (s *Conn) writeMessageAsync(verb Verb, format string, fmtArgs ...interface{}) (responseChan chan interface{}, err error) {
+func (s *Conn) writeMessageAsync(verb Verb, format string, fmtArgs ...interface{}) (responseChan chan interface{}, id MessageID, err error) {
 	messageID := s.nextMessageID
 	s.nextMessageID++
 	responseChan = make(chan interface{})
 	s.PendingStatus.Store(messageID, responseChan)
-	_, err = s.writeMessageWithID(messageID, verb, format, fmtArgs...)
-	return responseChan, err
+	id, err = s.writeMessageWithID(messageID, verb, format, fmtArgs...)
+	return responseChan, id, err
 }
 
 func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
@@ -135,14 +135,26 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	return messageID, err
 }
 
+// Cancel deallocates the response structures associated with the protocol message with the
+// given identifier. This is primarily useful when the other end of the connection has not
+// responded in a long time, and we are interested in cleaning up the resources used in
+// waiting for them to respond. An attempt to cancel a message that is not waiting for
+// a response will have no effect.
+func (s *Conn) Cancel(messageID MessageID) {
+	s.PendingStatus.Delete(messageID)
+}
+
 // SendVersionAsync notifies the other end of the sprout connection of our supported protocol
 // version number. It returns a channel which will contain the message received from the other
 // end of the connection when it becomes available. This message should be of type sprout.Status.
 //
+// The returned messageID is the identifier for this protocol message. It can be used to cancel
+// this request with the Cancel() method.
+//
 // Note: if the other side of the connection never responds or responds in an unparsable way,
 // nothing will ever be sent over the returned channel. It is the caller's responsibility to
 // handle this case.
-func (s *Conn) SendVersionAsync() (<-chan interface{}, error) {
+func (s *Conn) SendVersionAsync() (<-chan interface{}, MessageID, error) {
 	op := VersionVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
 }
@@ -163,7 +175,7 @@ func (s *Conn) SendVersionAsync() (<-chan interface{}, error) {
 //
 func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 	op := VersionVerb
-	statusChan, err := s.SendVersionAsync()
+	statusChan, messageID, err := s.SendVersionAsync()
 	if err != nil {
 		return fmt.Errorf("failed sending %s message: %w", op, err)
 	}
@@ -178,6 +190,7 @@ func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 		}
 		return nil
 	case <-timeoutChan:
+		s.Cancel(messageID)
 		return fmt.Errorf("timed out waiting for response to %s message", op)
 	}
 }
@@ -189,10 +202,13 @@ func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 // This message should be of type sprout.Response if the request was successful, and will be a
 // sprout.Status indicating the kind of error if the request failed.
 //
+// The returned messageID is the identifier for this protocol message. It can be used to cancel
+// this request with the Cancel() method.
+//
 // Note: if the other side of the connection never responds or responds in an unparsable way,
 // nothing will ever be sent over the returned channel. It is the caller's responsibility to
 // handle this case.
-func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan interface{}, error) {
+func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan interface{}, MessageID, error) {
 	op := ListVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeType, quantity)
 }
@@ -212,7 +228,7 @@ func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan int
 //		err := s.SendList(time.NewTicker(time.Second*5).C)
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := ListVerb
-	resultChan, err := s.SendListAsync(nodeType, quantity)
+	resultChan, messageID, err := s.SendListAsync(nodeType, quantity)
 	if err != nil {
 		return Response{}, fmt.Errorf("failed sending %s message: %w", op, err)
 	}
@@ -231,6 +247,7 @@ func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-ch
 		}
 		return Response{}, fmt.Errorf("received non-Status, non-Response value on response channel (type %T)", result)
 	case <-timeoutChan:
+		s.Cancel(messageID)
 		return Response{}, fmt.Errorf("timed out waiting for response to %s message", op)
 	}
 }
@@ -245,7 +262,7 @@ func stringifyNodeIDs(nodeIds ...*fields.QualifiedHash) string {
 	return builder.String()
 }
 
-func (s *Conn) SendQueryAsync(nodeIds ...*fields.QualifiedHash) (<-chan interface{}, error) {
+func (s *Conn) SendQueryAsync(nodeIds ...*fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	op := QueryVerb
 	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
@@ -255,7 +272,7 @@ func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
 	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
 
-func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-chan interface{}, error) {
+func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-chan interface{}, MessageID, error) {
 	op := AncestryVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeID.String(), levels)
 }
@@ -265,7 +282,7 @@ func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID
 	return s.writeMessage(op, string(op)+formats[op], nodeID.String(), levels)
 }
 
-func (s *Conn) SendLeavesOfAsync(nodeId *fields.QualifiedHash, quantity int) (<-chan interface{}, error) {
+func (s *Conn) SendLeavesOfAsync(nodeId *fields.QualifiedHash, quantity int) (<-chan interface{}, MessageID, error) {
 	op := LeavesOfVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeId.String(), quantity)
 }
@@ -298,7 +315,7 @@ func (s *Conn) subscribeOp(op Verb, community *forest.Community) (MessageID, err
 	return s.subscribeOpID(op, community.ID())
 }
 
-func (s *Conn) subscribeOpAsync(op Verb, community *forest.Community) (<-chan interface{}, error) {
+func (s *Conn) subscribeOpAsync(op Verb, community *forest.Community) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpIDAsync(op, community.ID())
 }
 
@@ -306,23 +323,23 @@ func (s *Conn) subscribeOpID(op Verb, community *fields.QualifiedHash) (MessageI
 	return s.writeMessage(op, string(op)+formats[op], community.String())
 }
 
-func (s *Conn) subscribeOpIDAsync(op Verb, community *fields.QualifiedHash) (<-chan interface{}, error) {
+func (s *Conn) subscribeOpIDAsync(op Verb, community *fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	return s.writeMessageAsync(op, string(op)+formats[op], community.String())
 }
 
-func (s *Conn) SendSubscribeAsync(community *forest.Community) (<-chan interface{}, error) {
+func (s *Conn) SendSubscribeAsync(community *forest.Community) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpAsync(SubscribeVerb, community)
 }
 
-func (s *Conn) SendUnsubscribeAsync(community *forest.Community) (<-chan interface{}, error) {
+func (s *Conn) SendUnsubscribeAsync(community *forest.Community) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpAsync(UnsubscribeVerb, community)
 }
 
-func (s *Conn) SendSubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, error) {
+func (s *Conn) SendSubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpIDAsync(SubscribeVerb, community)
 }
 
-func (s *Conn) SendUnsubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, error) {
+func (s *Conn) SendUnsubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpIDAsync(UnsubscribeVerb, community)
 }
 
@@ -383,7 +400,7 @@ func stringifyNodes(nodes []forest.Node) string {
 	return builder.String()
 }
 
-func (s *Conn) SendAnnounceAsync(nodes []forest.Node) (<-chan interface{}, error) {
+func (s *Conn) SendAnnounceAsync(nodes []forest.Node) (<-chan interface{}, MessageID, error) {
 	op := AnnounceVerb
 	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodes), stringifyNodes(nodes))
 }

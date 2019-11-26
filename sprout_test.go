@@ -115,7 +115,7 @@ func TestVersionMessageAsync(t *testing.T) {
 		}
 		return s.SendStatus(m, sprout.StatusOk)
 	}
-	statusChan, err := sconn.SendVersionAsync()
+	statusChan, _, err := sconn.SendVersionAsync()
 	if err != nil {
 		t.Fatalf("failed to send version: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestListMessageAsync(t *testing.T) {
 		}
 		return s.SendResponse(m, identities)
 	}
-	responseChan, err := sconn.SendListAsync(inNodeType, inQuantity)
+	responseChan, _, err := sconn.SendListAsync(inNodeType, inQuantity)
 	if err != nil {
 		t.Fatalf("failed to send query_any: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestQueryMessageAsync(t *testing.T) {
 	sconn.OnQuery = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
 		return s.SendResponse(m, nodes)
 	}
-	responseChan, err := sconn.SendQueryAsync(inNodeIDs...)
+	responseChan, _, err := sconn.SendQueryAsync(inNodeIDs...)
 	if err != nil {
 		t.Fatalf("failed to send query: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestAncestryMessageAsync(t *testing.T) {
 		}
 		return sconn.SendResponse(m, nodes)
 	}
-	resultChan, err := sconn.SendAncestryAsync(inNodeID, inLevels)
+	resultChan, _, err := sconn.SendAncestryAsync(inNodeID, inLevels)
 	if err != nil {
 		t.Fatalf("failed to send ancestry: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestLeavesOfMessageAsync(t *testing.T) {
 		}
 		return sconn.SendResponse(m, nodes)
 	}
-	resultChan, err := sconn.SendLeavesOfAsync(inNodeID, inQuantity)
+	resultChan, _, err := sconn.SendLeavesOfAsync(inNodeID, inQuantity)
 	if err != nil {
 		t.Fatalf("failed to send query_any: %v", err)
 	}
@@ -459,14 +459,14 @@ func TestSubscribeMessageAsync(t *testing.T) {
 		return s.SendStatus(m, sprout.StatusOk)
 	}
 
-	resultChan, err := sconn.SendSubscribeByIDAsync(inNodeID)
+	resultChan, _, err := sconn.SendSubscribeByIDAsync(inNodeID)
 	if err != nil {
 		t.Fatalf("failed to send subscribe: %v", err)
 	}
 	go readConnOrFail(sconn, 2, t)
 	verifyStatus(sprout.StatusOk, resultChan, t)
 
-	resultChan2, err := sconn.SendUnsubscribeByIDAsync(inNodeID)
+	resultChan2, _, err := sconn.SendUnsubscribeByIDAsync(inNodeID)
 	if err != nil {
 		t.Fatalf("failed to send unsubscribe: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestAnnounceMessageAsync(t *testing.T) {
 		}
 		return sconn.SendStatus(m, sprout.StatusOk)
 	}
-	statusChan, err := sconn.SendAnnounceAsync(inNodes)
+	statusChan, _, err := sconn.SendAnnounceAsync(inNodes)
 	if err != nil {
 		t.Fatalf("failed to send response: %v", err)
 	}
