@@ -135,22 +135,50 @@ func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format strin
 	return messageID, err
 }
 
+// SendVersionAsync notifies the other end of the sprout connection of our supported protocol
+// version number. It returns a channel which will contain the message received from the other
+// end of the connection when it becomes available. This message should be of type sprout.Status.
+//
+// Note: if the other side of the connection never responds or responds in an unparsable way,
+// nothing will ever be sent over the returned channel. It is the caller's responsibility to
+// handle this case.
 func (s *Conn) SendVersionAsync() (<-chan interface{}, error) {
 	op := VersionVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
-func (s *Conn) SendVersion(timeoutChan <-chan time.Time) (Status, error) {
+// SendVersion notifies the other end of the sprout connection of our supported protocol
+// version number. It will block until it receives a response or until it receives something
+// on the provided timeoutChan. It will return an error if:
+//
+// - There is a network problem sending the message or receiving the response
+//
+// - There is a problem creating the outbound message or parsing the inbound response
+//
+// - The status message received in response is not sprout.StatusOk. In this case, the error will be of type sprout.Status
+//
+// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
+//
+//		err := s.SendVersion(time.NewTicker(time.Second*5).C)
+//
+func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 	op := VersionVerb
 	statusChan, err := s.SendVersionAsync()
 	if err != nil {
-		return Status{}, fmt.Errorf("failed sending %s message: %w", op, err)
+		return fmt.Errorf("failed sending %s message: %w", op, err)
 	}
 	select {
 	case status := <-statusChan:
-		return status.(Status), nil
+		asStatus, ok := status.(Status)
+		if !ok {
+			return fmt.Errorf("got non-status struct over response channel (type %T)", status)
+		}
+		if asStatus.Code != StatusOk {
+			return asStatus
+		}
+		return nil
 	case <-timeoutChan:
-		return Status{}, fmt.Errorf("timed out waiting for response to %s message", op)
+		return fmt.Errorf("timed out waiting for response to %s message", op)
 	}
 }
 

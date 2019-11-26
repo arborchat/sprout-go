@@ -99,12 +99,9 @@ func TestVersionMessage(t *testing.T) {
 		return sconn.SendStatus(m, sprout.StatusOk)
 	}
 	go readConnOrFail(sconn, 2, t)
-	status, err := sconn.SendVersion(time.NewTicker(time.Second).C)
+	err := sconn.SendVersion(time.NewTicker(time.Second).C)
 	if err != nil {
 		t.Fatalf("failed to send version: %v", err)
-	}
-	if !(status.Code == sprout.StatusOk) {
-		t.Fatalf("expected status %d, got %d", sprout.StatusOk, status.Code)
 	}
 }
 
@@ -642,7 +639,7 @@ func TestWithRealNetConn(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to make sprout.Conn from net.Conn: %v", err)
 		}
-		if _, err := sconn.SendVersion(nil); err != nil {
+		if err := sconn.SendVersion(nil); err != nil {
 			t.Fatalf("Failed to send version: %v", err)
 		}
 	}()
