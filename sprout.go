@@ -363,12 +363,12 @@ func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 func (s *Conn) sendToWaitingChannel(data interface{}, messageID MessageID) error {
 	waitingChan, ok := s.PendingStatus.Load(messageID)
 	if !ok {
-		return fmt.Errorf("got status for message that wasn't waiting (id %d)", messageID)
+		return fmt.Errorf("id %d is not waiting for data", messageID)
 	}
 	s.PendingStatus.Delete(messageID)
 	statusChan, ok := waitingChan.(chan interface{})
 	if !ok {
-		return fmt.Errorf("found item in map for message id %d, but isn't type chan Status, is %T", messageID, waitingChan)
+		return fmt.Errorf("found item in map for message id %d, but isn't type chan interface{}, is %T", messageID, waitingChan)
 	}
 	statusChan <- data
 	close(statusChan)
