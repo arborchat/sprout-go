@@ -182,11 +182,34 @@ func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 	}
 }
 
+// SendListAsync requests a list of recent nodes of a particular node type from the other end of
+// the sprout connection. The requested quantity is the maximum number of nodes that the other
+// end should provide, though it may provide significantly fewer. It returns a channel which will
+// contain the message received from the other end of the connection when it becomes available.
+// This message should be of type sprout.Response if the request was successful, and will be a
+// sprout.Status indicating the kind of error if the request failed.
+//
+// Note: if the other side of the connection never responds or responds in an unparsable way,
+// nothing will ever be sent over the returned channel. It is the caller's responsibility to
+// handle this case.
 func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan interface{}, error) {
 	op := ListVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeType, quantity)
 }
 
+// SendList requests a list of recent nodes of a particular node type from the other end of
+// the sprout connection. It will block until it receives a response or until it receives something
+// on the provided timeoutChan. It will return an error if:
+//
+// - There is a network problem sending the message or receiving the response
+//
+// - There is a problem creating the outbound message or parsing the inbound response
+//
+// - The message received in response is not a response message. In this case, the error will be of type sprout.Status
+//
+// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
+//
+//		err := s.SendList(time.NewTicker(time.Second*5).C)
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := ListVerb
 	resultChan, err := s.SendListAsync(nodeType, quantity)
