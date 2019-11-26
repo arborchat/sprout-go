@@ -497,7 +497,7 @@ func (s *Conn) readNodeLines(count int) ([]forest.Node, error) {
 		if err := id.UnmarshalText([]byte(idString)); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal node id %s: %v", idString, err)
 		}
-		node, err := NodeFromBase64(nodeString)
+		node, err := NodeFromBase64URL(nodeString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read node %s: %v", nodeString, err)
 		}
@@ -530,7 +530,7 @@ func (s *Conn) readNodeIDs(count int) ([]*fields.QualifiedHash, error) {
 	return ids, nil
 }
 
-func NodeFromBase64(in string) (forest.Node, error) {
+func NodeFromBase64URL(in string) (forest.Node, error) {
 	b, err := base64.RawURLEncoding.DecodeString(in)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode node string: %v", err)
