@@ -334,40 +334,18 @@ func TestAncestryMessageAsync(t *testing.T) {
 }
 
 func TestAncestryMessage(t *testing.T) {
-	var (
-		inID, outID         sprout.MessageID
-		inNodeID, outNodeID *fields.QualifiedHash
-		inLevels, outLevels int
-		err                 error
-	)
-	inNodeID = randomQualifiedHash()
-	inLevels = 5
+	ids, identities := randomNodeSlice(10, t)
 
 	_, sconn := mockConnOrFail(t)
 	sconn.OnAncestry = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, levels int) error {
-		outID = m
-		outNodeID = nodeID
-		outLevels = levels
-		return nil
+		return s.SendResponse(m, identities)
 	}
-	inID, err = sconn.SendAncestry(inNodeID, inLevels)
+	go readConnOrFail(sconn, 2, t)
+	response, err := sconn.SendAncestry(ids[0], len(ids)-1, time.NewTicker(time.Second).C)
 	if err != nil {
-		t.Fatalf("failed to send ancestry: %v", err)
+		t.Fatalf("failed to send query: %v", err)
 	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read ancestry: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if inLevels != outLevels {
-		t.Fatalf("levels mismatch, expected %d, got %d", inLevels, outLevels)
-	}
-	if !inNodeID.Equals(outNodeID) {
-		inString, _ := inNodeID.MarshalText()
-		outString, _ := outNodeID.MarshalText()
-		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
-	}
+	verifyResponse(identities, response, t)
 }
 
 func TestLeavesOfMessageAsync(t *testing.T) {

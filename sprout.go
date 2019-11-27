@@ -293,9 +293,10 @@ func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-ch
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeID.String(), levels)
 }
 
-func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int) (MessageID, error) {
+func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int, timeoutChan <-chan time.Time) (Response, error) {
 	op := AncestryVerb
-	return s.writeMessage(op, string(op)+formats[op], nodeID.String(), levels)
+	resultChan, messageID, err := s.SendAncestryAsync(nodeID, levels)
+	return s.handleExpectedResponse(op, resultChan, messageID, err, timeoutChan)
 }
 
 func (s *Conn) SendLeavesOfAsync(nodeId *fields.QualifiedHash, quantity int) (<-chan interface{}, MessageID, error) {
