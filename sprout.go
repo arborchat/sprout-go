@@ -228,7 +228,7 @@ func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan int
 //
 // The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
 //
-//		err := s.SendList(time.NewTicker(time.Second*5).C)
+//		err := s.SendList(fields.NodeTypeIdentity, 1024, time.NewTicker(time.Second*5).C)
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := ListVerb
 	resultChan, messageID, err := s.SendListAsync(nodeType, quantity)
@@ -277,11 +277,38 @@ func stringifyNodeIDs(nodeIds ...*fields.QualifiedHash) string {
 	return builder.String()
 }
 
+// SendQueryAsync requests the nodes with a list of IDs from the other side of the
+// sprout connection. It returns a channel which will
+// contain the message received from the other end of the connection when it becomes available.
+// This message should be of type sprout.Response if the request was successful, and will be a
+// sprout.Status indicating the kind of error if the request failed.
+// If the response was successful, it should contain the requested nodes in the
+// same order in which they were requested.
+//
+// The returned messageID is the identifier for this protocol message. It can be used to cancel
+// this request with the Cancel() method.
+//
+// Note: if the other side of the connection never responds or responds in an unparsable way,
+// nothing will ever be sent over the returned channel. It is the caller's responsibility to
+// handle this case.
 func (s *Conn) SendQueryAsync(nodeIds ...*fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	op := QueryVerb
 	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
 
+// SendQuery requests the nodes with a list of IDs from the other side of the
+// sprout connection. It will block until it receives a response or until it receives something
+// on the provided timeoutChan. It will return an error if:
+//
+// - There is a network problem sending the message or receiving the response
+//
+// - There is a problem creating the outbound message or parsing the inbound response
+//
+// - The message received in response is not a response message. In this case, the error will be of type sprout.Status
+//
+// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
+//
+//		err := s.SendQuery(nodeIds, time.NewTicker(time.Second*5).C)
 func (s *Conn) SendQuery(nodeIds []*fields.QualifiedHash, timeoutChan <-chan time.Time) (Response, error) {
 	op := QueryVerb
 	resultChan, messageID, err := s.SendQueryAsync(nodeIds...)
