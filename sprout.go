@@ -479,6 +479,15 @@ func (s *Conn) sendToWaitingChannel(data interface{}, messageID MessageID) error
 	return nil
 }
 
+// ReadMessage reads and parses a single sprout protocol message off of the
+// connection. It calls the appropriate OnVerb handler function when it
+// parses a message, and it returns any parse errors. It will block when no messages are available.
+//
+// This method must be called in a loop in order for the sprout connection
+// to be able to receive messages properly. This isn't done automatically
+// by the Conn type in order to provide flexibility on how to handler errors
+// from this method. The Worker type can wrap a Conn to both implement its
+// handler functions and call this method automatically.
 func (s *Conn) ReadMessage() error {
 	var word string
 	n, err := fmt.Fscanf(s.BufferedConn, "%s", &word)
