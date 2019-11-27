@@ -106,20 +106,26 @@ func NewConn(transport io.ReadWriteCloser) (*Conn, error) {
 }
 
 func (s *Conn) writeMessage(verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
-	messageID = s.nextMessageID
-	s.nextMessageID++
+	messageID = s.getNextMessageID()
 	return s.writeMessageWithID(messageID, verb, format, fmtArgs...)
 }
 
 // writeStatusMessageAsync writes a message that expects a `status` or `response`
 // message and returns the channel on which that response will be provided.
 func (s *Conn) writeMessageAsync(verb Verb, format string, fmtArgs ...interface{}) (responseChan chan interface{}, id MessageID, err error) {
-	messageID := s.nextMessageID
-	s.nextMessageID++
+	messageID := s.getNextMessageID()
 	responseChan = make(chan interface{})
 	s.PendingStatus.Store(messageID, responseChan)
 	id, err = s.writeMessageWithID(messageID, verb, format, fmtArgs...)
 	return responseChan, id, err
+}
+
+func (s *Conn) getNextMessageID() MessageID {
+	s.Lock()
+	defer s.Unlock()
+	id := s.nextMessageID
+	s.nextMessageID++
+	return id
 }
 
 func (s *Conn) writeMessageWithID(messageIDIn MessageID, verb Verb, format string, fmtArgs ...interface{}) (messageID MessageID, err error) {
