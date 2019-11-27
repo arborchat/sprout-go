@@ -3,6 +3,7 @@ package sprout_test
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -142,7 +143,7 @@ func TestListMessageAsync(t *testing.T) {
 		t.Fatalf("failed to send query_any: %v", err)
 	}
 	go readConnOrFail(sconn, 2, t)
-	verifyResponse(identities, responseChan, t)
+	verifyAsyncResponse(identities, responseChan, t)
 }
 
 func TestListMessage(t *testing.T) {
@@ -237,18 +238,18 @@ func TestQueryMessageAsync(t *testing.T) {
 		t.Fatalf("failed to send query: %v", err)
 	}
 	go readConnOrFail(sconn, 2, t)
-	verifyResponse(nodes, responseChan, t)
+	verifyAsyncResponse(nodes, responseChan, t)
 }
 
 func readConnOrFail(sconn *sprout.Conn, times int, t *testing.T) {
 	for i := 0; i < times; i++ {
 		err := sconn.ReadMessage()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				i--
 				continue
 			}
-			t.Fatalf("failed to read message: %v", err)
+			t.Fatalf("failed to read message (iteration %d): %v", i, err)
 		}
 	}
 }
@@ -269,7 +270,7 @@ func verifyStatus(expected sprout.StatusCode, responseChan <-chan interface{}, t
 	}
 }
 
-func verifyResponse(nodes []forest.Node, responseChan <-chan interface{}, t *testing.T) {
+func verifyAsyncResponse(nodes []forest.Node, responseChan <-chan interface{}, t *testing.T) {
 	var responseGeneric interface{}
 	select {
 	case responseGeneric = <-responseChan:
@@ -280,6 +281,10 @@ func verifyResponse(nodes []forest.Node, responseChan <-chan interface{}, t *tes
 	if !ok {
 		t.Fatalf("Expected to receive struct of type Response, got %T", responseGeneric)
 	}
+	verifyResponse(nodes, response, t)
+}
+
+func verifyResponse(nodes []forest.Node, response sprout.Response, t *testing.T) {
 	if len(nodes) != len(response.Nodes) {
 		t.Fatalf("node list length mismatch, expected %d, got %d", len(nodes), len(response.Nodes))
 	}
@@ -291,40 +296,20 @@ func verifyResponse(nodes []forest.Node, responseChan <-chan interface{}, t *tes
 }
 
 func TestQueryMessage(t *testing.T) {
-	var (
-		inID, outID           sprout.MessageID
-		inNodeIDs, outNodeIDs []*fields.QualifiedHash
-		err                   error
-	)
-	inNodeIDs = randomQualifiedHashSlice(10)
+	ids, identities := randomNodeSlice(10, t)
 
 	_, sconn := mockConnOrFail(t)
 	sconn.OnQuery = func(s *sprout.Conn, m sprout.MessageID, nodeIDs []*fields.QualifiedHash) error {
-		outID = m
-		outNodeIDs = nodeIDs
-		return nil
+		return s.SendResponse(m, identities)
 	}
-	inID, err = sconn.SendQuery(inNodeIDs...)
+	go readConnOrFail(sconn, 2, t)
+	response, err := sconn.SendQuery(ids, time.NewTicker(time.Second).C)
 	if err != nil {
 		t.Fatalf("failed to send query: %v", err)
 	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read query: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if len(inNodeIDs) != len(outNodeIDs) {
-		t.Fatalf("node id list length mismatch, expected %d, got %d", len(inNodeIDs), len(outNodeIDs))
-	}
-	for i, n := range inNodeIDs {
-		if !n.Equals(outNodeIDs[i]) {
-			inString, _ := n.MarshalText()
-			outString, _ := outNodeIDs[i].MarshalText()
-			t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
-		}
-	}
+	verifyResponse(identities, response, t)
 }
+
 func TestAncestryMessageAsync(t *testing.T) {
 	inLevels := 5
 	_, nodes := randomNodeSlice(inLevels, t)
@@ -345,7 +330,7 @@ func TestAncestryMessageAsync(t *testing.T) {
 		t.Fatalf("failed to send ancestry: %v", err)
 	}
 	go readConnOrFail(sconn, 2, t)
-	verifyResponse(nodes, resultChan, t)
+	verifyAsyncResponse(nodes, resultChan, t)
 }
 
 func TestAncestryMessage(t *testing.T) {
@@ -404,7 +389,7 @@ func TestLeavesOfMessageAsync(t *testing.T) {
 		t.Fatalf("failed to send query_any: %v", err)
 	}
 	go readConnOrFail(sconn, 2, t)
-	verifyResponse(nodes, resultChan, t)
+	verifyAsyncResponse(nodes, resultChan, t)
 }
 
 func TestLeavesOfMessage(t *testing.T) {

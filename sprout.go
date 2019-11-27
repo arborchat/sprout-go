@@ -86,6 +86,9 @@ type Conn struct {
 	OnAnnounce    func(s *Conn, messageID MessageID, nodes []forest.Node) error
 }
 
+// NewConn constructs a sprout connection using the provided transport. Writes to the transport
+// are expected to reach the other end of the sprout connection, and reads should deliver bytes
+// from the other end. The expected use is TCP connections, though other transports are possible.
 func NewConn(transport io.ReadWriteCloser) (*Conn, error) {
 	type bufferedConn struct {
 		io.Reader
@@ -229,6 +232,17 @@ func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan int
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := ListVerb
 	resultChan, messageID, err := s.SendListAsync(nodeType, quantity)
+	return s.handleExpectedResponse(op, resultChan, messageID, err, timeoutChan)
+}
+
+// handleExpectedResponse waits for a response message on the resultChan it is given until it receives anything
+// on timeoutChan. If a value is received on the resultChan and it is a Result, it will be returned. It it is a
+// Status (indicating that something went wrong), it will be returned as an error. If the timeout occurs, the
+// request will be cancelled using the provided messageID and an error will be returned.
+//
+// The err parameter is intended to be used as the err returned by calling one of the Async methods. This allows
+// us to write the error handler only once in this function instead of once in each synchronous method.
+func (s *Conn) handleExpectedResponse(op Verb, resultChan <-chan interface{}, messageID MessageID, err error, timeoutChan <-chan time.Time) (Response, error) {
 	if err != nil {
 		return Response{}, fmt.Errorf("failed sending %s message: %w", op, err)
 	}
@@ -252,6 +266,7 @@ func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-ch
 	}
 }
 
+// convert a list of node IDs into the format required by the Query message
 func stringifyNodeIDs(nodeIds ...*fields.QualifiedHash) string {
 	builder := &strings.Builder{}
 	for _, nodeId := range nodeIds {
@@ -267,9 +282,10 @@ func (s *Conn) SendQueryAsync(nodeIds ...*fields.QualifiedHash) (<-chan interfac
 	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
 
-func (s *Conn) SendQuery(nodeIds ...*fields.QualifiedHash) (MessageID, error) {
+func (s *Conn) SendQuery(nodeIds []*fields.QualifiedHash, timeoutChan <-chan time.Time) (Response, error) {
 	op := QueryVerb
-	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
+	resultChan, messageID, err := s.SendQueryAsync(nodeIds...)
+	return s.handleExpectedResponse(op, resultChan, messageID, err, timeoutChan)
 }
 
 func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-chan interface{}, MessageID, error) {
@@ -439,7 +455,7 @@ func (s *Conn) ReadMessage() error {
 	var word string
 	n, err := fmt.Fscanf(s.BufferedConn, "%s", &word)
 	if err != nil {
-		return fmt.Errorf("error scanning verb: %v", err)
+		return fmt.Errorf("error scanning verb: %w", err)
 	} else if n < 1 {
 		return fmt.Errorf("failed to read a verb")
 	}
