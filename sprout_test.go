@@ -371,38 +371,18 @@ func TestLeavesOfMessageAsync(t *testing.T) {
 }
 
 func TestLeavesOfMessage(t *testing.T) {
-	var (
-		inID, outID             sprout.MessageID
-		inNodeID, outNodeID     *fields.QualifiedHash
-		inQuantity, outQuantity int
-		err                     error
-	)
-	inNodeID = randomQualifiedHash()
-	inQuantity = 5
+	inQuantity := 5
+	ids, identities := randomNodeSlice(inQuantity, t)
 	_, sconn := mockConnOrFail(t)
 	sconn.OnLeavesOf = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash, quantity int) error {
-		outID = m
-		outNodeID = nodeID
-		outQuantity = quantity
-		return nil
+		return s.SendResponse(m, identities[1:])
 	}
-	inID, err = sconn.SendLeavesOf(inNodeID, inQuantity)
+	go readConnOrFail(sconn, 2, t)
+	response, err := sconn.SendLeavesOf(ids[0], inQuantity-1, time.NewTicker(time.Second).C)
 	if err != nil {
 		t.Fatalf("failed to send query_any: %v", err)
 	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read query_any: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if !inNodeID.Equals(outNodeID) {
-		inString, _ := inNodeID.MarshalText()
-		outString, _ := outNodeID.MarshalText()
-		t.Fatalf("node id mismatch, expected %s, got %s", inString, outString)
-	} else if inQuantity != outQuantity {
-		t.Fatalf("quantity mismatch, expected %d, got %d", inQuantity, outQuantity)
-	}
+	verifyResponse(identities[1:], response, t)
 }
 
 func TestSubscribeMessageAsync(t *testing.T) {

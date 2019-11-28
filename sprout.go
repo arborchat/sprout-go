@@ -154,34 +154,15 @@ func (s *Conn) Cancel(messageID MessageID) {
 }
 
 // SendVersionAsync notifies the other end of the sprout connection of our supported protocol
-// version number. It returns a channel which will contain the message received from the other
-// end of the connection when it becomes available. This message should be of type sprout.Status.
-//
-// The returned messageID is the identifier for this protocol message. It can be used to cancel
-// this request with the Cancel() method.
-//
-// Note: if the other side of the connection never responds or responds in an unparsable way,
-// nothing will ever be sent over the returned channel. It is the caller's responsibility to
-// handle this case.
+// version number. See the package-level documentation for details on how
+// to use the Async methods properly.
 func (s *Conn) SendVersionAsync() (<-chan interface{}, MessageID, error) {
 	op := VersionVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], s.Major, s.Minor)
 }
 
 // SendVersion notifies the other end of the sprout connection of our supported protocol
-// version number. It will block until it receives a response or until it receives something
-// on the provided timeoutChan. It will return an error if:
-//
-// - There is a network problem sending the message or receiving the response
-//
-// - There is a problem creating the outbound message or parsing the inbound response
-//
-// - The status message received in response is not sprout.StatusOk. In this case, the error will be of type sprout.Status
-//
-// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
-//
-//		err := s.SendVersion(time.NewTicker(time.Second*5).C)
-//
+// version number.
 func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 	op := VersionVerb
 	statusChan, messageID, err := s.SendVersionAsync()
@@ -206,35 +187,15 @@ func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 
 // SendListAsync requests a list of recent nodes of a particular node type from the other end of
 // the sprout connection. The requested quantity is the maximum number of nodes that the other
-// end should provide, though it may provide significantly fewer. It returns a channel which will
-// contain the message received from the other end of the connection when it becomes available.
-// This message should be of type sprout.Response if the request was successful, and will be a
-// sprout.Status indicating the kind of error if the request failed.
-//
-// The returned messageID is the identifier for this protocol message. It can be used to cancel
-// this request with the Cancel() method.
-//
-// Note: if the other side of the connection never responds or responds in an unparsable way,
-// nothing will ever be sent over the returned channel. It is the caller's responsibility to
-// handle this case.
+// end should provide, though it may provide significantly fewer.
+// See the package level documentation for details on how to use the Async methods.
 func (s *Conn) SendListAsync(nodeType fields.NodeType, quantity int) (<-chan interface{}, MessageID, error) {
 	op := ListVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeType, quantity)
 }
 
 // SendList requests a list of recent nodes of a particular node type from the other end of
-// the sprout connection. It will block until it receives a response or until it receives something
-// on the provided timeoutChan. It will return an error if:
-//
-// - There is a network problem sending the message or receiving the response
-//
-// - There is a problem creating the outbound message or parsing the inbound response
-//
-// - The message received in response is not a response message. In this case, the error will be of type sprout.Status
-//
-// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
-//
-//		err := s.SendList(fields.NodeTypeIdentity, 1024, time.NewTicker(time.Second*5).C)
+// the sprout connection.
 func (s *Conn) SendList(nodeType fields.NodeType, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := ListVerb
 	resultChan, messageID, err := s.SendListAsync(nodeType, quantity)
@@ -284,37 +245,15 @@ func stringifyNodeIDs(nodeIds ...*fields.QualifiedHash) string {
 }
 
 // SendQueryAsync requests the nodes with a list of IDs from the other side of the
-// sprout connection. It returns a channel which will
-// contain the message received from the other end of the connection when it becomes available.
-// This message should be of type sprout.Response if the request was successful, and will be a
-// sprout.Status indicating the kind of error if the request failed.
-// If the response was successful, it should contain the requested nodes in the
-// same order in which they were requested.
-//
-// The returned messageID is the identifier for this protocol message. It can be used to cancel
-// this request with the Cancel() method.
-//
-// Note: if the other side of the connection never responds or responds in an unparsable way,
-// nothing will ever be sent over the returned channel. It is the caller's responsibility to
-// handle this case.
+// sprout connection. See the package level documentation for details on how to
+// use the Async methods.
 func (s *Conn) SendQueryAsync(nodeIds ...*fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	op := QueryVerb
 	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodeIds), stringifyNodeIDs(nodeIds...))
 }
 
 // SendQuery requests the nodes with a list of IDs from the other side of the
-// sprout connection. It will block until it receives a response or until it receives something
-// on the provided timeoutChan. It will return an error if:
-//
-// - There is a network problem sending the message or receiving the response
-//
-// - There is a problem creating the outbound message or parsing the inbound response
-//
-// - The message received in response is not a response message. In this case, the error will be of type sprout.Status
-//
-// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
-//
-//		err := s.SendQuery(nodeIds, time.NewTicker(time.Second*5).C)
+// sprout connection.
 func (s *Conn) SendQuery(nodeIds []*fields.QualifiedHash, timeoutChan <-chan time.Time) (Response, error) {
 	op := QueryVerb
 	resultChan, messageID, err := s.SendQueryAsync(nodeIds...)
@@ -322,53 +261,35 @@ func (s *Conn) SendQuery(nodeIds []*fields.QualifiedHash, timeoutChan <-chan tim
 }
 
 // SendAncestry requests the ancestry of the node with the given id. The levels
-// parameter specifies the maximum number of leves of ancestry to return. It returns a channel which will
-// contain the message received from the other end of the connection when it becomes available.
-// This message should be of type sprout.Response if the request was successful, and will be a
-// sprout.Status indicating the kind of error if the request failed.
-// If the response was successful, it should contain the requested nodes in the
-// same order in which they were requested.
-//
-// The returned messageID is the identifier for this protocol message. It can be used to cancel
-// this request with the Cancel() method.
-//
-// Note: if the other side of the connection never responds or responds in an unparsable way,
-// nothing will ever be sent over the returned channel. It is the caller's responsibility to
-// handle this case.
+// parameter specifies the maximum number of leves of ancestry to return.
+// See the package-level documentation for details on how to use the Async
+// methods.
 func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-chan interface{}, MessageID, error) {
 	op := AncestryVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeID.String(), levels)
 }
 
 // SendAncestry requests the ancestry of the node with the given id. The levels
-// parameter specifies the maximum number of leves of ancestry to return. It will
-// block until it receives a response or until it receives something
-// on the provided timeoutChan. It will return an error if:
-//
-// - There is a network problem sending the message or receiving the response
-//
-// - There is a problem creating the outbound message or parsing the inbound response
-//
-// - The message received in response is not a response message. In this case, the error will be of type sprout.Status
-//
-// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
-//
-//		err := s.SendAncestry(nodeID, 34, time.NewTicker(time.Second*5).C)
+// parameter specifies the maximum number of leves of ancestry to return.
 func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int, timeoutChan <-chan time.Time) (Response, error) {
 	op := AncestryVerb
 	resultChan, messageID, err := s.SendAncestryAsync(nodeID, levels)
 	return s.handleExpectedResponse(op, resultChan, messageID, err, timeoutChan)
 }
 
+// SendLeavesOf returns up to quantity nodes that are leaves in the tree rooted
+// at the given ID. For a description of how to use the Async methods, see the package-level documentation.
 func (s *Conn) SendLeavesOfAsync(nodeId *fields.QualifiedHash, quantity int) (<-chan interface{}, MessageID, error) {
 	op := LeavesOfVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeId.String(), quantity)
 }
 
-func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int) (MessageID, error) {
-	id, _ := nodeId.MarshalText()
+// SendLeavesOf returns up to quantity nodes that are leaves in the tree rooted
+// at the given ID.
+func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int, timeoutChan <-chan time.Time) (Response, error) {
 	op := LeavesOfVerb
-	return s.writeMessage(op, string(op)+formats[op], string(id), quantity)
+	resultChan, messageID, err := s.SendLeavesOfAsync(nodeId, quantity)
+	return s.handleExpectedResponse(op, resultChan, messageID, err, timeoutChan)
 }
 
 const nodeLineFormat = "%s %s\n"

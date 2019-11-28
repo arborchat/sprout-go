@@ -19,16 +19,28 @@ handler functions for each sprout message and the processing loop that will
 read new messages and dispatch their handlers. You can send messages on a worker
 by calling Conn methods via struct embedding. It has an exported embedded Conn.
 
-Note: The Send{MessageType}Async methods
-
 The Conn type has both synchronous and asynchronous methods for sending messages.
 The synchronous ones block until they recieve a response or their timeout channel
-emits a value.
+emits a value. Details on how to use these methods follow.
 
-It is recommended to provide a time.Ticker's C field as an easy timeout channel.
-As an example, here's the recommended way to invoke SendVersion:
+Note: The Send* methods
 
-    err := conn.SendVersion(time.NewTicker(time.Second*5).C)
+The non-Async methods block until the get a response or until their timeout is
+reached. There are several cases in which will return an error:
+
+- There is a network problem sending the message or receiving the response
+
+- There is a problem creating the outbound message or parsing the inbound response
+
+- The status message received in response is not sprout.StatusOk. In this case, the error will be of type sprout.Status
+
+The recommended way to invoke synchronous Send*() methods is with a time.Ticker
+as the input channel, like so:
+
+	err := s.SendVersion(time.NewTicker(time.Second*5).C)
+
+
+Note: The Send*Async methods
 
 The Async versions of each send operation provide more granular control over
 blocking behavior. They return a chan interface{}, but will never send anything
