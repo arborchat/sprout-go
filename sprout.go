@@ -321,11 +321,39 @@ func (s *Conn) SendQuery(nodeIds []*fields.QualifiedHash, timeoutChan <-chan tim
 	return s.handleExpectedResponse(op, resultChan, messageID, err, timeoutChan)
 }
 
+// SendAncestry requests the ancestry of the node with the given id. The levels
+// parameter specifies the maximum number of leves of ancestry to return. It returns a channel which will
+// contain the message received from the other end of the connection when it becomes available.
+// This message should be of type sprout.Response if the request was successful, and will be a
+// sprout.Status indicating the kind of error if the request failed.
+// If the response was successful, it should contain the requested nodes in the
+// same order in which they were requested.
+//
+// The returned messageID is the identifier for this protocol message. It can be used to cancel
+// this request with the Cancel() method.
+//
+// Note: if the other side of the connection never responds or responds in an unparsable way,
+// nothing will ever be sent over the returned channel. It is the caller's responsibility to
+// handle this case.
 func (s *Conn) SendAncestryAsync(nodeID *fields.QualifiedHash, levels int) (<-chan interface{}, MessageID, error) {
 	op := AncestryVerb
 	return s.writeMessageAsync(op, string(op)+formats[op], nodeID.String(), levels)
 }
 
+// SendAncestry requests the ancestry of the node with the given id. The levels
+// parameter specifies the maximum number of leves of ancestry to return. It will
+// block until it receives a response or until it receives something
+// on the provided timeoutChan. It will return an error if:
+//
+// - There is a network problem sending the message or receiving the response
+//
+// - There is a problem creating the outbound message or parsing the inbound response
+//
+// - The message received in response is not a response message. In this case, the error will be of type sprout.Status
+//
+// The recommended way to invoke this method is with a time.Ticker as the input channel, like so:
+//
+//		err := s.SendAncestry(nodeID, 34, time.NewTicker(time.Second*5).C)
 func (s *Conn) SendAncestry(nodeID *fields.QualifiedHash, levels int, timeoutChan <-chan time.Time) (Response, error) {
 	op := AncestryVerb
 	resultChan, messageID, err := s.SendAncestryAsync(nodeID, levels)
