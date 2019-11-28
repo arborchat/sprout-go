@@ -35,9 +35,15 @@ blocking behavior. They return a chan interface{}, but will never send anything
 other than a sprout.Status or sprout.Response over that channel. It is safe to
 assume that the value will be one of those two.
 
+The Async versions also return a handle for the request called a MessageID. This
+can be used to cancel the request in the event that it doesn't have a response
+or the response no longer matters. This can be done manually using the Cancel()
+method on the Conn type. The synchronous version of each send method handles this
+for you, but it must be done manually with the async variant.
+
 An example of the appropriate use of an async method:
 
-    resultChan, err := conn.SendQueryAsync(ids)
+    resultChan, messageID, err := conn.SendQueryAsync(ids)
     if err != nil {
         // handle err
     }
@@ -50,6 +56,7 @@ An example of the appropriate use of an async method:
                     // handle Response
             }
         case <-time.NewTicker(time.Second*5).C:
+            conn.Cancel(messageID)
             // handle timeout
     }
 
