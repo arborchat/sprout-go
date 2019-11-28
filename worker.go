@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
@@ -81,7 +82,7 @@ func (c *Worker) HandleNewNode(node forest.Node) {
 		// maybe we should announce new communities?
 	case *forest.Reply:
 		if c.IsSubscribed(&n.CommunityID) {
-			if _, err := c.SendAnnounce([]forest.Node{n}); err != nil {
+			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(time.Second).C); err != nil {
 				c.Printf("Error announcing new reply: %v", err)
 			}
 		}

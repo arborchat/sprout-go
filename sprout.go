@@ -166,6 +166,10 @@ func (s *Conn) SendVersionAsync() (<-chan interface{}, MessageID, error) {
 func (s *Conn) SendVersion(timeoutChan <-chan time.Time) error {
 	op := VersionVerb
 	statusChan, messageID, err := s.SendVersionAsync()
+	return s.handleExpectedStatus(op, statusChan, messageID, err, timeoutChan)
+}
+
+func (s *Conn) handleExpectedStatus(op Verb, statusChan <-chan interface{}, messageID MessageID, err error, timeoutChan <-chan time.Time) error {
 	if err != nil {
 		return fmt.Errorf("failed sending %s message: %w", op, err)
 	}
@@ -358,6 +362,7 @@ func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash) (MessageID, 
 	return s.subscribeOpID(UnsubscribeVerb, community)
 }
 
+// StatusCode represents the status of a sprout protocol message.
 type StatusCode int
 
 const (
@@ -368,6 +373,7 @@ const (
 	ErrorUnknownNode    StatusCode = 4
 )
 
+// String converts the status code into a human-readable error message
 func (s StatusCode) String() string {
 	description := ""
 	switch s {
@@ -385,6 +391,9 @@ func (s StatusCode) String() string {
 	return fmt.Sprintf("status code %d (%s)", s, description)
 }
 
+// SendStatus responds to the message with the give targetMessageID with the
+// given status code. It is always synchronous, and will return any error
+// in transmitting the message.
 func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error {
 	op := StatusVerb
 	_, err := s.writeMessageWithID(targetMessageID, op, string(op)+formats[op], errorCode)
@@ -399,16 +408,24 @@ func stringifyNodes(nodes []forest.Node) string {
 	return builder.String()
 }
 
+// SendAnnounceAsync announces the existence of the given nodes to the peer
+// on the other end of the sprout connection. See the package-level documentation
+// for details on how to use Async methods.
 func (s *Conn) SendAnnounceAsync(nodes []forest.Node) (<-chan interface{}, MessageID, error) {
 	op := AnnounceVerb
 	return s.writeMessageAsync(op, string(op)+formats[op]+"%s", len(nodes), stringifyNodes(nodes))
 }
 
-func (s *Conn) SendAnnounce(nodes []forest.Node) (messageID MessageID, err error) {
+// SendAnnounce announces the existence of the given nodes to the peer
+// on the other end of the sprout connection.
+func (s *Conn) SendAnnounce(nodes []forest.Node, timeoutChan <-chan time.Time) error {
 	op := AnnounceVerb
-	return s.writeMessage(op, string(op)+formats[op]+"%s", len(nodes), stringifyNodes(nodes))
+	responseChan, messageID, err := s.SendAnnounceAsync(nodes)
+	return s.handleExpectedStatus(op, responseChan, messageID, err, timeoutChan)
 }
 
+// scanOp scans the fields for the given verb from the input connection and into
+// the provided fields slice.
 func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 	n, err := fmt.Fscanf(s.BufferedConn, formats[verb], fields...)
 	if err != nil {
@@ -419,6 +436,8 @@ func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 	return nil
 }
 
+// sendToWaitingChannel looks up the channel associated with a given messageID
+// and sends the given data on that channel.
 func (s *Conn) sendToWaitingChannel(data interface{}, messageID MessageID) error {
 	waitingChan, ok := s.PendingStatus.Load(messageID)
 	if !ok {

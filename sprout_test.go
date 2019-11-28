@@ -511,44 +511,20 @@ func TestAnnounceMessageAsync(t *testing.T) {
 }
 
 func TestAnnounceMessage(t *testing.T) {
-	var (
-		inID, outID       sprout.MessageID
-		inNodes, outNodes []forest.Node
-		err               error
-		sconn             *sprout.Conn
-	)
 	const count = 3
-	inNodes = make([]forest.Node, count)
-	for i := range inNodes {
-		inNodes[i] = randomIdentity(t)
-	}
+	_, inNodes := randomNodeSlice(count, t)
 	conn := &LoopbackConn{}
-	sconn, err = sprout.NewConn(conn)
+	sconn, err := sprout.NewConn(conn)
 	if err != nil {
 		t.Fatalf("failed to construct sprout.Conn: %v", err)
 	}
 	sconn.OnAnnounce = func(s *sprout.Conn, m sprout.MessageID, nodes []forest.Node) error {
-		outID = m
-		outNodes = nodes
-		return nil
+		return s.SendStatus(m, sprout.StatusOk)
 	}
-	inID, err = sconn.SendAnnounce(inNodes)
+	go readConnOrFail(sconn, 2, t)
+	err = sconn.SendAnnounce(inNodes, time.NewTicker(time.Second).C)
 	if err != nil {
 		t.Fatalf("failed to send response: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read response: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	} else if len(inNodes) != len(outNodes) {
-		t.Fatalf("node list length mismatch, expected %d, got %d", len(inNodes), len(outNodes))
-	}
-	for i, node := range inNodes {
-		if !node.Equals(outNodes[i]) {
-			t.Fatalf("Node mismatch at index %d,\nin: %v\nout: %v", i, node, outNodes[i])
-		}
 	}
 }
 
