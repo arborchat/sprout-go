@@ -294,7 +294,7 @@ func (s *Conn) SendLeavesOf(nodeId *fields.QualifiedHash, quantity int, timeoutC
 
 const nodeLineFormat = "%s %s\n"
 
-func NodeLine(n forest.Node) string {
+func nodeLine(n forest.Node) string {
 	id, _ := n.ID().MarshalText()
 	data, _ := n.MarshalBinary()
 	return fmt.Sprintf(nodeLineFormat, string(id), base64.RawURLEncoding.EncodeToString(data))
@@ -303,7 +303,7 @@ func NodeLine(n forest.Node) string {
 func (s *Conn) SendResponse(msgID MessageID, nodes []forest.Node) error {
 	builder := &strings.Builder{}
 	for _, n := range nodes {
-		builder.WriteString(NodeLine(n))
+		builder.WriteString(nodeLine(n))
 	}
 	op := ResponseVerb
 	_, err := s.writeMessageWithID(msgID, op, string(op)+formats[op]+"%s", len(nodes), builder.String())
@@ -394,7 +394,7 @@ func (s *Conn) SendStatus(targetMessageID MessageID, errorCode StatusCode) error
 func stringifyNodes(nodes []forest.Node) string {
 	builder := &strings.Builder{}
 	for _, node := range nodes {
-		builder.WriteString(NodeLine(node))
+		builder.WriteString(nodeLine(node))
 	}
 	return builder.String()
 }
