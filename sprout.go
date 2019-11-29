@@ -314,52 +314,81 @@ func (s *Conn) SendResponse(msgID MessageID, nodes []forest.Node) error {
 	return err
 }
 
-func (s *Conn) subscribeOp(op Verb, community *forest.Community) (MessageID, error) {
-	return s.subscribeOpID(op, community.ID())
+func (s *Conn) subscribeOp(op Verb, community *forest.Community, timeoutChan <-chan time.Time) error {
+	return s.subscribeOpID(op, community.ID(), timeoutChan)
 }
 
 func (s *Conn) subscribeOpAsync(op Verb, community *forest.Community) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpIDAsync(op, community.ID())
 }
 
-func (s *Conn) subscribeOpID(op Verb, community *fields.QualifiedHash) (MessageID, error) {
-	return s.writeMessage(op, string(op)+formats[op], community.String())
+func (s *Conn) subscribeOpID(op Verb, community *fields.QualifiedHash, timeoutChan <-chan time.Time) error {
+	statusChan, messageID, err := s.subscribeOpIDAsync(op, community)
+	return s.handleExpectedStatus(op, statusChan, messageID, err, timeoutChan)
 }
 
 func (s *Conn) subscribeOpIDAsync(op Verb, community *fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	return s.writeMessageAsync(op, string(op)+formats[op], community.String())
 }
 
+// SendSubscribeAsync attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce(). For details on how to use
+// Async methods, see the package-level documentation.
 func (s *Conn) SendSubscribeAsync(community *forest.Community) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpAsync(SubscribeVerb, community)
 }
 
+// SendUnsubscribeAsync attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce(). For details on how to use
+// Async methods, see the package-level documentation.
 func (s *Conn) SendUnsubscribeAsync(community *forest.Community) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpAsync(UnsubscribeVerb, community)
 }
 
+// SendSubscribeByIDAsync attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce(). For details on how to use
+// Async methods, see the package-level documentation.
 func (s *Conn) SendSubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpIDAsync(SubscribeVerb, community)
 }
 
+// SendUnsubscribeByIDAsync attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce(). For details on how to use
+// Async methods, see the package-level documentation.
 func (s *Conn) SendUnsubscribeByIDAsync(community *fields.QualifiedHash) (<-chan interface{}, MessageID, error) {
 	return s.subscribeOpIDAsync(UnsubscribeVerb, community)
 }
 
-func (s *Conn) SendSubscribe(community *forest.Community) (MessageID, error) {
-	return s.subscribeOp(SubscribeVerb, community)
+// SendSubscribe attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce().
+func (s *Conn) SendSubscribe(community *forest.Community, timeoutChan <-chan time.Time) error {
+	return s.subscribeOp(SubscribeVerb, community, timeoutChan)
 }
 
-func (s *Conn) SendUnsubscribe(community *forest.Community) (MessageID, error) {
-	return s.subscribeOp(UnsubscribeVerb, community)
+// SendUnsubscribe attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce().
+func (s *Conn) SendUnsubscribe(community *forest.Community, timeoutChan <-chan time.Time) error {
+	return s.subscribeOp(UnsubscribeVerb, community, timeoutChan)
 }
 
-func (s *Conn) SendSubscribeByID(community *fields.QualifiedHash) (MessageID, error) {
-	return s.subscribeOpID(SubscribeVerb, community)
+// SendSubscribeByID attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce().
+func (s *Conn) SendSubscribeByID(community *fields.QualifiedHash, timeoutChan <-chan time.Time) error {
+	return s.subscribeOpID(SubscribeVerb, community, timeoutChan)
 }
 
-func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash) (MessageID, error) {
-	return s.subscribeOpID(UnsubscribeVerb, community)
+// SendUnsubscribeByID attempts to add the given community ID to the list of subscribed
+// IDs for this connection. If it succeeds, both peers are required to exchange
+// new nodes for that community using Announce().
+func (s *Conn) SendUnsubscribeByID(community *fields.QualifiedHash, timeoutChan <-chan time.Time) error {
+	return s.subscribeOpID(UnsubscribeVerb, community, timeoutChan)
 }
 
 // StatusCode represents the status of a sprout protocol message.

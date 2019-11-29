@@ -418,66 +418,30 @@ func TestSubscribeMessageAsync(t *testing.T) {
 }
 
 func TestSubscribeMessage(t *testing.T) {
-	var (
-		inID, outID         sprout.MessageID
-		inNodeID, outNodeID *fields.QualifiedHash
-		err                 error
-	)
-	inNodeID = randomQualifiedHash()
+	inNodeID := randomQualifiedHash()
 
 	_, sconn := mockConnOrFail(t)
 	sconn.OnSubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
-		outID = m
-		outNodeID = nodeID
-		return nil
+		return s.SendStatus(m, sprout.StatusOk)
 	}
-	inID, err = sconn.SendSubscribeByID(inNodeID)
+	go readConnOrFail(sconn, 2, t)
+	err := sconn.SendSubscribeByID(inNodeID, time.NewTicker(time.Second).C)
 	if err != nil {
 		t.Fatalf("failed to send subscribe: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read subscribe: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	}
-	if !inNodeID.Equals(outNodeID) {
-		inString, _ := inNodeID.MarshalText()
-		outString, _ := outNodeID.MarshalText()
-		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
 	}
 }
 
 func TestUnsubscribeMessage(t *testing.T) {
-	var (
-		inID, outID         sprout.MessageID
-		inNodeID, outNodeID *fields.QualifiedHash
-		err                 error
-	)
-	inNodeID = randomQualifiedHash()
+	inNodeID := randomQualifiedHash()
 
 	_, sconn := mockConnOrFail(t)
 	sconn.OnUnsubscribe = func(s *sprout.Conn, m sprout.MessageID, nodeID *fields.QualifiedHash) error {
-		outID = m
-		outNodeID = nodeID
-		return nil
+		return s.SendStatus(m, sprout.StatusOk)
 	}
-	inID, err = sconn.SendUnsubscribeByID(inNodeID)
+	go readConnOrFail(sconn, 2, t)
+	err := sconn.SendUnsubscribeByID(inNodeID, time.NewTicker(time.Second).C)
 	if err != nil {
-		t.Fatalf("failed to send unsubscribe: %v", err)
-	}
-	err = sconn.ReadMessage()
-	if err != nil {
-		t.Fatalf("failed to read unsubscribe: %v", err)
-	}
-	if inID != outID {
-		t.Fatalf("id mismatch, got %d, expected %d", outID, inID)
-	}
-	if !inNodeID.Equals(outNodeID) {
-		inString, _ := inNodeID.MarshalText()
-		outString, _ := outNodeID.MarshalText()
-		t.Fatalf("node id mismatch, expected %s got %s", inString, outString)
+		t.Fatalf("failed to send subscribe: %v", err)
 	}
 }
 
