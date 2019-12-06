@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
@@ -76,10 +77,15 @@ func (c *Worker) Run() {
 
 func (c *Worker) HandleNewNode(node forest.Node) {
 	switch n := node.(type) {
+	// TODO: DRY this out
 	case *forest.Identity:
-		// shouldn't just announce random user ids unsolicted
+		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(time.Second*5)); err != nil {
+			c.Printf("Error announcing new identity: %v", err)
+		}
 	case *forest.Community:
-		// maybe we should announce new communities?
+		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(time.Second*5)); err != nil {
+			c.Printf("Error announcing new community: %v", err)
+		}
 	case *forest.Reply:
 		if c.IsSubscribed(&n.CommunityID) {
 			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(time.Second).C); err != nil {
@@ -156,6 +162,10 @@ func (c *Worker) OnAncestry(s *Conn, messageID MessageID, nodeID *fields.Qualifi
 		ancestors = append(ancestors, parentNode)
 		currentNode = parentNode
 	}
+	// reverse the order
+	sort.Slice(ancestors, func(i, j int) bool {
+		return ancestors[i].TreeDepth() < ancestors[j].TreeDepth()
+	})
 	return s.SendResponse(messageID, ancestors)
 }
 
@@ -243,4 +253,121 @@ func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) e
 		return fmt.Errorf("Failed handling announce node: %w", err)
 	}
 	return s.SendStatus(messageID, StatusOk)
+}
+
+// BootstrapLocalStore is a utility method for loading all available
+// content from the peer on the other end of the sprout connection.
+// It will
+//
+// - discover all communities
+// - fetch the signing identities of those communities
+// - validate and insert those identities and communities into the
+//   worker's store
+// - subscribe to all of those communities
+// - fetch all leaves of those communities
+// - fetch the ancestry of each leaf and validate it (fetching identities as necessary), inserting nodes that pass valdiation into the store
+func (c *Worker) BootstrapLocalStore(maxCommunities int, perRequestTimeout time.Duration) {
+	communities, err := c.SendList(fields.NodeTypeCommunity, maxCommunities, makeTicker(perRequestTimeout))
+	if err != nil {
+		c.Printf("Failed listing peer communities: %v", err)
+		return
+	}
+	for _, node := range communities.Nodes {
+		community, isCommunity := node.(*forest.Community)
+		if !isCommunity {
+			c.Printf("Got response in community list that isn't a community: %s", node.ID().String())
+			continue
+		}
+		if err := c.ensureAuthorAvailable(community, perRequestTimeout); err != nil {
+			c.Printf("Couldn't fetch author information for node %s: %v", community.ID().String(), err)
+			continue
+		}
+		if err := c.AddAs(community, c.subscriptionID); err != nil {
+			c.Printf("Couldn't add community %s to store: %v", community.ID().String(), err)
+			continue
+		}
+		if err := c.SendSubscribe(community, makeTicker(perRequestTimeout)); err != nil {
+			c.Printf("Couldn't subscribe to community %s", community.ID().String())
+			continue
+		}
+		c.Printf("Subscribed to %s", community.ID().String())
+		if err := c.fetchFullTree(community, maxCommunities, perRequestTimeout); err != nil {
+			c.Printf("Couldn't fetch message tree rooted at community %s: %v", community.ID().String(), err)
+			continue
+		}
+	}
+}
+
+func (c *Worker) fetchFullTree(root forest.Node, maxNodes int, perRequestTimeout time.Duration) error {
+	leafList, err := c.SendLeavesOf(root.ID(), maxNodes, makeTicker(perRequestTimeout))
+	if err != nil {
+		return fmt.Errorf("couldn't fetch leaves of node %s: %v", root.ID().String(), err)
+	}
+	for _, leaf := range leafList.Nodes {
+		if _, alreadyInStore, err := c.Get(leaf.ID()); err != nil {
+			return fmt.Errorf("failed checking if we already have leaf node %s: %w", leaf.ID().String(), err)
+		} else if alreadyInStore {
+			continue
+		}
+		ancestry, err := c.SendAncestry(leaf.ID(), int(leaf.TreeDepth()), makeTicker(perRequestTimeout))
+		if err != nil {
+			return fmt.Errorf("couldn't fetch ancestry of node %s: %v", leaf.ID().String(), err)
+		}
+		sort.Slice(ancestry.Nodes, func(i, j int) bool {
+			return ancestry.Nodes[i].TreeDepth() < ancestry.Nodes[j].TreeDepth()
+		})
+		ancestry.Nodes = append(ancestry.Nodes, leaf)
+		for _, ancestor := range ancestry.Nodes {
+			if err := c.ensureAuthorAvailable(ancestor, perRequestTimeout); err != nil {
+				return fmt.Errorf("couldn't fetch author for node %s: %w", ancestor.ID().String(), err)
+			}
+			if err := ancestor.ValidateDeep(c.SubscribableStore); err != nil {
+				return fmt.Errorf("couldn't validate node %s: %w", ancestor.ID().String(), err)
+			}
+			if err := c.AddAs(ancestor, c.subscriptionID); err != nil {
+				return fmt.Errorf("couldn't add node %s to store: %w", ancestor.ID().String(), err)
+			}
+		}
+	}
+	return nil
+}
+
+func makeTicker(duration time.Duration) <-chan time.Time {
+	return time.NewTicker(duration).C
+}
+
+func (c *Worker) ensureAuthorAvailable(node forest.Node, perRequestTimeout time.Duration) error {
+	var authorID *fields.QualifiedHash
+	switch n := node.(type) {
+	case *forest.Identity:
+		authorID = &n.Author
+	case *forest.Community:
+		authorID = &n.Author
+	case *forest.Reply:
+		authorID = &n.Author
+	default:
+		return fmt.Errorf("unsupported type in ensureAuthorAvailable: %T", n)
+	}
+	_, inStore, err := c.GetIdentity(authorID)
+	if err != nil {
+		return fmt.Errorf("failed looking for author id %s in store: %w", authorID.String(), err)
+	}
+	if inStore {
+		return nil
+	}
+	response, err := c.SendQuery([]*fields.QualifiedHash{authorID}, makeTicker(perRequestTimeout))
+	if err != nil {
+		return fmt.Errorf("failed querying for author %s: %w", authorID.String(), err)
+	}
+	if len(response.Nodes) != 1 {
+		return fmt.Errorf("query for single author id %s returned %d nodes", authorID.String(), len(response.Nodes))
+	}
+	author := response.Nodes[0]
+	if err := author.ValidateDeep(c.SubscribableStore); err != nil {
+		return fmt.Errorf("unable to validate author %s: %w", author.ID().String(), err)
+	}
+	if err := c.AddAs(author, c.subscriptionID); err != nil {
+		return fmt.Errorf("failed inserting new valid author %s into store: %w", author.ID().String(), err)
+	}
+	return nil
 }

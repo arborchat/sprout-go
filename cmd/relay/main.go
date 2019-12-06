@@ -11,11 +11,14 @@ import (
 	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
-	"git.sr.ht/~whereswaldon/forest-go/fields"
 	"git.sr.ht/~whereswaldon/forest-go/grove"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 	"git.sr.ht/~whereswaldon/sprout-go/watch"
 )
+
+func tickerChan(seconds int) <-chan time.Time {
+	return time.NewTicker(time.Second * time.Duration(seconds)).C
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -145,7 +148,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 				log.Printf("Failed to create sprout conn from test dial: %v", err)
 			}
 			log.Printf("Sending version information on test connection")
-			if _, err := sconn.SendVersion(); err != nil {
+			if err := sconn.SendVersion(time.NewTicker(time.Second * 5).C); err != nil {
 				log.Printf("Failed to send version information from test conn: %v", err)
 			}
 		}()
@@ -171,48 +174,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 		}
 		worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%v ", address), log.Flags())
 		go worker.Run()
-		go func() {
-			// This goroutine is a hack to prefetch and subscribe to all content known by the
-			// peer. As we improve the sprout API, this will get a lot less gross.
-			quantityOfNodesToTry := 1024
-			_, err := worker.SendList(fields.NodeTypeIdentity, quantityOfNodesToTry)
-			if err != nil {
-				worker.Printf("Failed attempting to learn all existing communities: %v", err)
-			}
-			// Wait until we have received all identities before attempting to list communities
-			// since we can't validate them without their author's Identity file.
-			time.Sleep(time.Second)
-			_, err = worker.SendList(fields.NodeTypeCommunity, quantityOfNodesToTry)
-			if err != nil {
-				worker.Printf("Failed attempting to learn all existing communities: %v", err)
-			}
-			// Wait until we might have received all communities before attempting to subscribe.
-			// This is super racy, but we can eliminate that once you can block waiting for the
-			// response to a *specific* protocol message.
-			time.Sleep(time.Second)
-			communities, err := grove.Recent(fields.NodeTypeCommunity, quantityOfNodesToTry)
-			if err != nil {
-				worker.Printf("Failed listing known communities: %v", err)
-			}
-			for _, community := range communities {
-				_, err := worker.SendSubscribe(community.(*forest.Community))
-				if err != nil {
-					worker.Printf("Failed subscribing to %s", community.ID().String())
-					continue
-				}
-				worker.Session.Subscribe(community.ID())
-				worker.Printf("Subscribed to community %s", community.ID().String())
-				_, err = worker.SendLeavesOf(community.ID(), quantityOfNodesToTry)
-				if err != nil {
-					worker.Printf("Failed requesting leaves of %s", community.ID().String())
-					continue
-				}
-			}
-			_, err = worker.SendList(fields.NodeTypeReply, quantityOfNodesToTry)
-			if err != nil {
-				worker.Printf("Failed listing %d replies from peer: %v", quantityOfNodesToTry, err)
-			}
-		}()
+		go worker.BootstrapLocalStore(1024, time.Second*5)
 	}
 
 	// Block until a signal is received.
