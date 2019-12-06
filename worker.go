@@ -88,7 +88,7 @@ func (c *Worker) HandleNewNode(node forest.Node) {
 		}
 	case *forest.Reply:
 		if c.IsSubscribed(&n.CommunityID) {
-			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(time.Second).C); err != nil {
+			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(time.Second*10).C); err != nil {
 				c.Printf("Error announcing new reply: %v", err)
 			}
 		}
@@ -290,6 +290,7 @@ func (c *Worker) BootstrapLocalStore(maxCommunities int, perRequestTimeout time.
 			c.Printf("Couldn't subscribe to community %s", community.ID().String())
 			continue
 		}
+		c.Subscribe(community.ID())
 		c.Printf("Subscribed to %s", community.ID().String())
 		if err := c.fetchFullTree(community, maxCommunities, perRequestTimeout); err != nil {
 			c.Printf("Couldn't fetch message tree rooted at community %s: %v", community.ID().String(), err)
