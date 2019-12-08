@@ -278,34 +278,37 @@ func (c *Worker) IngestNode(node forest.Node) error {
 			return fmt.Errorf("failed validating %s after fetching ancestry: %w", node.ID(), err)
 		}
 	}
-	switch n := node.(type) {
-	case *forest.Identity:
-		return c.SubscribableStore.AddAs(n, c.subscriptionID)
-	case *forest.Community:
-		return c.SubscribableStore.AddAs(n, c.subscriptionID)
-	case *forest.Reply:
-		if c.Session.IsSubscribed(&n.CommunityID) {
-			return c.SubscribableStore.AddAs(n, c.subscriptionID)
-		} else {
-			return fmt.Errorf("received annoucement for reply %s in non-subscribed community %s", n.ID().String(), n.CommunityID.String())
-		}
-	default:
-		return fmt.Errorf("Unknown node type announced: %T", node)
-	}
+	return c.SubscribableStore.AddAs(node, c.subscriptionID)
 }
 
 func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
-	var err error
 	for _, node := range nodes {
-		c.Printf("Handling announcement for node %s", node.ID().String())
-		go func(n forest.Node) {
-			if err := c.IngestNode(n); err != nil {
-				c.Printf("Failed ingesting node %s: %v", n.ID().String(), err)
+		shouldIngest := false
+		switch n := node.(type) {
+		case *forest.Identity:
+			shouldIngest = true
+		case *forest.Community:
+			shouldIngest = true
+		case *forest.Reply:
+			if c.Session.IsSubscribed(&n.CommunityID) {
+				shouldIngest = true
+			} else {
+				c.Printf("received annoucement for reply %s in non-subscribed community %s", n.ID().String(), n.CommunityID.String())
+				continue
 			}
-		}(node)
-	}
-	if err != nil {
-		return fmt.Errorf("Failed handling announce node: %w", err)
+		default:
+			return fmt.Errorf("Unknown node type announced: %T", node)
+		}
+		if shouldIngest {
+			c.Printf("Ingesting node %s", node.ID())
+			go func(n forest.Node) {
+				if err := c.IngestNode(n); err != nil {
+					c.Printf("Failed ingesting node %s: %v", n.ID().String(), err)
+				}
+			}(node)
+		} else {
+			c.Printf("Not ingesting node %s", node.ID())
+		}
 	}
 	return s.SendStatus(messageID, StatusOk)
 }
