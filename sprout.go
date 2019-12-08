@@ -465,12 +465,27 @@ func (s *Conn) scanOp(verb Verb, fields ...interface{}) error {
 	return nil
 }
 
+// UnsolicitedMessageError is an error indicating that a sprout peer sent a
+// response or status message with an ID that was unexpected. This could
+// occur when we cancelled waiting on a request (such as a timeout), when the
+// peer has a bug (double response, incorrect target message id in response),
+// or when the peer is misbehaving.
+type UnsolicitedMessageError struct {
+	// The ID that the unsolicited message was in response to
+	MessageID
+}
+
+func (u UnsolicitedMessageError) Error() string {
+	return fmt.Sprintf("received status or response message for id %d, but nothing was waiting for that id", u.MessageID)
+}
+
 // sendToWaitingChannel looks up the channel associated with a given messageID
 // and sends the given data on that channel.
 func (s *Conn) sendToWaitingChannel(data interface{}, messageID MessageID) error {
 	waitingChan, ok := s.PendingStatus.Load(messageID)
 	if !ok {
-		return fmt.Errorf("id %d is not waiting for data", messageID)
+		// discard if nothing is waiting.
+		return UnsolicitedMessageError{MessageID: messageID}
 	}
 	s.PendingStatus.Delete(messageID)
 	statusChan, ok := waitingChan.(chan interface{})
@@ -491,6 +506,10 @@ func (s *Conn) sendToWaitingChannel(data interface{}, messageID MessageID) error
 // by the Conn type in order to provide flexibility on how to handler errors
 // from this method. The Worker type can wrap a Conn to both implement its
 // handler functions and call this method automatically.
+//
+// This method may return an UnsolicitedMessageError in some cases. This may
+// be due to a local timeout/request cancellation, and should generally not
+// be cause to close the connection entirely.
 func (s *Conn) ReadMessage() error {
 	var word string
 	n, err := fmt.Fscanf(s.BufferedConn, "%s", &word)
@@ -513,7 +532,7 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnVersion(s, messageID, major, minor); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	case ListVerb:
 		var (
@@ -528,7 +547,7 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnList(s, messageID, nodeType, quantity); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	case QueryVerb:
 		var (
@@ -540,13 +559,13 @@ func (s *Conn) ReadMessage() error {
 		}
 		ids, err := s.readNodeIDs(count)
 		if err != nil {
-			return fmt.Errorf("failed to read node ids in query message: %v", err)
+			return fmt.Errorf("failed to read node ids in query message: %w", err)
 		}
 		if s.OnQuery == nil {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnQuery(s, messageID, ids); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	case AncestryVerb:
 		var (
@@ -559,14 +578,14 @@ func (s *Conn) ReadMessage() error {
 		}
 		id := &fields.QualifiedHash{}
 		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
-			return fmt.Errorf("failed to unmarshal ancestry target: %v", err)
+			return fmt.Errorf("failed to unmarshal ancestry target: %w", err)
 		}
 
 		if s.OnAncestry == nil {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnAncestry(s, messageID, id, levels); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	case LeavesOfVerb:
 		var (
@@ -579,13 +598,13 @@ func (s *Conn) ReadMessage() error {
 		}
 		id := &fields.QualifiedHash{}
 		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
-			return fmt.Errorf("failed to unmarshal leaves_of target: %v", err)
+			return fmt.Errorf("failed to unmarshal leaves_of target: %w", err)
 		}
 		if s.OnLeavesOf == nil {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnLeavesOf(s, messageID, id, quantity); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	case ResponseVerb:
 		var (
@@ -599,7 +618,7 @@ func (s *Conn) ReadMessage() error {
 		}
 		response.Nodes, err = s.readNodeLines(count)
 		if err != nil {
-			return fmt.Errorf("failed reading response node list: %v", err)
+			return fmt.Errorf("failed reading response node list: %w", err)
 		}
 		if err := s.sendToWaitingChannel(response, targetMessageID); err != nil {
 			return fmt.Errorf("failed sending response to waiting channel: %w", err)
@@ -616,7 +635,7 @@ func (s *Conn) ReadMessage() error {
 		}
 		id := &fields.QualifiedHash{}
 		if err := id.UnmarshalText([]byte(nodeIDString)); err != nil {
-			return fmt.Errorf("failed to unmarshal %s target: %v", verb, err)
+			return fmt.Errorf("failed to unmarshal %s target: %w", verb, err)
 		}
 
 		hook := s.OnSubscribe
@@ -627,7 +646,7 @@ func (s *Conn) ReadMessage() error {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := hook(s, messageID, id); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	case StatusVerb:
 		var (
@@ -650,14 +669,14 @@ func (s *Conn) ReadMessage() error {
 		}
 		nodes, err := s.readNodeLines(count)
 		if err != nil {
-			return fmt.Errorf("failed parsing announce node list: %v", err)
+			return fmt.Errorf("failed parsing announce node list: %w", err)
 		}
 
 		if s.OnAnnounce == nil {
 			return fmt.Errorf("no handler set for verb %s", verb)
 		}
 		if err := s.OnAnnounce(s, messageID, nodes); err != nil {
-			return fmt.Errorf("error running hook for %s: %v", verb, err)
+			return fmt.Errorf("error running hook for %s: %w", verb, err)
 		}
 	}
 	return nil

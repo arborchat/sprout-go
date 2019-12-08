@@ -1,6 +1,7 @@
 package sprout
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -63,8 +64,13 @@ func (c *Worker) Run() {
 	defer c.SubscribableStore.UnsubscribeToNewMessages(c.subscriptionID)
 	for {
 		if err := c.ReadMessage(); err != nil {
-			c.Printf("failed to read sprout message: %v", err)
-			return
+			var unsolicitedErr UnsolicitedMessageError
+			if errors.As(err, &unsolicitedErr) {
+				c.Printf("ignoring unsolicited message responding to %d", unsolicitedErr.MessageID)
+			} else {
+				c.Printf("failed to read sprout message: %v", err)
+				return
+			}
 		}
 		select {
 		case <-c.Done:
