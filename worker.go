@@ -20,7 +20,8 @@ type SubscribableStore interface {
 }
 
 type Worker struct {
-	Done <-chan struct{}
+	Done           <-chan struct{}
+	DefaultTimeout time.Duration
 	*Conn
 	*log.Logger
 	*Session
@@ -33,6 +34,7 @@ func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*W
 		Done:              done,
 		SubscribableStore: store,
 		Logger:            log.New(log.Writer(), "", log.LstdFlags|log.Lshortfile),
+		DefaultTimeout:    time.Minute,
 	}
 	var err error
 	w.Conn, err = NewConn(conn)
@@ -85,16 +87,16 @@ func (c *Worker) HandleNewNode(node forest.Node) {
 	switch n := node.(type) {
 	// TODO: DRY this out
 	case *forest.Identity:
-		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(time.Second*5)); err != nil {
+		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(c.DefaultTimeout)); err != nil {
 			c.Printf("Error announcing new identity: %v", err)
 		}
 	case *forest.Community:
-		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(time.Second*5)); err != nil {
+		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(c.DefaultTimeout)); err != nil {
 			c.Printf("Error announcing new community: %v", err)
 		}
 	case *forest.Reply:
 		if c.IsSubscribed(&n.CommunityID) {
-			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(time.Second*10).C); err != nil {
+			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(c.DefaultTimeout).C); err != nil {
 				c.Printf("Error announcing new reply: %v", err)
 			}
 		}
@@ -236,24 +238,71 @@ func (c *Worker) OnUnsubscribe(s *Conn, messageID MessageID, nodeID *fields.Qual
 	return nil
 }
 
+// IngestNode makes a best-effort attempt to validate and insert the given node.
+// It will fetch the author (if not already available), then attempt to validate
+// the node. If that validation fails, it will attempt to fetch the node's entire
+// ancestry and the authorship of each ancestry node. It will validate each
+// ancestor and insert them into the local store (if they are not already there),
+// then it will attempt to re-validate the original node after processing its
+// entire ancestry.
+//
+// It will return the first error during this chain of validations.
+func (c *Worker) IngestNode(node forest.Node) error {
+	timeout := c.DefaultTimeout
+	if err := c.ensureAuthorAvailable(node, timeout); err != nil {
+		return err
+	}
+	if err := node.ValidateDeep(c.SubscribableStore); err != nil {
+		ancestry, err := c.SendAncestry(node.ID(), int(node.TreeDepth()), makeTicker(timeout))
+		if err != nil {
+			return fmt.Errorf("validation unable to fetch ancestry for node %s: %w", node.ID(), err)
+		}
+		for _, ancestor := range ancestry.Nodes {
+			if _, alreadyHas, err := c.SubscribableStore.Get(ancestor.ID()); err != nil {
+				return fmt.Errorf("unable to check whether %s is in local store: %w", ancestor.ID(), err)
+			} else if alreadyHas {
+				// we already have this ancestor, no need to validate it again
+				continue
+			}
+			if err := c.ensureAuthorAvailable(ancestor, timeout); err != nil {
+				return fmt.Errorf("validation unable to fetch author for ancestor %s: %w", ancestor.ID(), err)
+			}
+			if err := ancestor.ValidateDeep(c.SubscribableStore); err != nil {
+				return fmt.Errorf("validation failed for ancestor %s: %w", ancestor.ID(), err)
+			}
+			if err := c.AddAs(ancestor, c.subscriptionID); err != nil {
+				return fmt.Errorf("failed inserting ancestory %s into store: %w", ancestor.ID(), err)
+			}
+		}
+		if err := node.ValidateDeep(c.SubscribableStore); err != nil {
+			return fmt.Errorf("failed validating %s after fetching ancestry: %w", node.ID(), err)
+		}
+	}
+	switch n := node.(type) {
+	case *forest.Identity:
+		return c.SubscribableStore.AddAs(n, c.subscriptionID)
+	case *forest.Community:
+		return c.SubscribableStore.AddAs(n, c.subscriptionID)
+	case *forest.Reply:
+		if c.Session.IsSubscribed(&n.CommunityID) {
+			return c.SubscribableStore.AddAs(n, c.subscriptionID)
+		} else {
+			return fmt.Errorf("received annoucement for reply %s in non-subscribed community %s", n.ID().String(), n.CommunityID.String())
+		}
+	default:
+		return fmt.Errorf("Unknown node type announced: %T", node)
+	}
+}
+
 func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
 	var err error
 	for _, node := range nodes {
 		c.Printf("Handling announcement for node %s", node.ID().String())
-		switch n := node.(type) {
-		case *forest.Identity:
-			err = c.SubscribableStore.AddAs(n, c.subscriptionID)
-		case *forest.Community:
-			err = c.SubscribableStore.AddAs(n, c.subscriptionID)
-		case *forest.Reply:
-			if c.Session.IsSubscribed(&n.CommunityID) {
-				err = c.SubscribableStore.AddAs(n, c.subscriptionID)
-			} else {
-				err = fmt.Errorf("received annoucement for reply %s in non-subscribed community %s", n.ID().String(), n.CommunityID.String())
+		go func(n forest.Node) {
+			if err := c.IngestNode(n); err != nil {
+				c.Printf("Failed ingesting node %s: %v", n.ID().String(), err)
 			}
-		default:
-			err = fmt.Errorf("Unknown node type announced: %T", node)
-		}
+		}(node)
 	}
 	if err != nil {
 		return fmt.Errorf("Failed handling announce node: %w", err)
@@ -347,7 +396,8 @@ func (c *Worker) ensureAuthorAvailable(node forest.Node, perRequestTimeout time.
 	var authorID *fields.QualifiedHash
 	switch n := node.(type) {
 	case *forest.Identity:
-		authorID = &n.Author
+		// identities are self-signed, and they have no author
+		return nil
 	case *forest.Community:
 		authorID = &n.Author
 	case *forest.Reply:
