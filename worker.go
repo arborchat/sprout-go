@@ -324,8 +324,8 @@ func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) e
 // - subscribe to all of those communities
 // - fetch all leaves of those communities
 // - fetch the ancestry of each leaf and validate it (fetching identities as necessary), inserting nodes that pass valdiation into the store
-func (c *Worker) BootstrapLocalStore(maxCommunities int, perRequestTimeout time.Duration) {
-	communities, err := c.SendList(fields.NodeTypeCommunity, maxCommunities, makeTicker(perRequestTimeout))
+func (c *Worker) BootstrapLocalStore(maxCommunities int) {
+	communities, err := c.SendList(fields.NodeTypeCommunity, maxCommunities, makeTicker(c.DefaultTimeout))
 	if err != nil {
 		c.Printf("Failed listing peer communities: %v", err)
 		return
@@ -336,7 +336,7 @@ func (c *Worker) BootstrapLocalStore(maxCommunities int, perRequestTimeout time.
 			c.Printf("Got response in community list that isn't a community: %s", node.ID().String())
 			continue
 		}
-		if err := c.ensureAuthorAvailable(community, perRequestTimeout); err != nil {
+		if err := c.ensureAuthorAvailable(community, c.DefaultTimeout); err != nil {
 			c.Printf("Couldn't fetch author information for node %s: %v", community.ID().String(), err)
 			continue
 		}
@@ -344,13 +344,13 @@ func (c *Worker) BootstrapLocalStore(maxCommunities int, perRequestTimeout time.
 			c.Printf("Couldn't add community %s to store: %v", community.ID().String(), err)
 			continue
 		}
-		if err := c.SendSubscribe(community, makeTicker(perRequestTimeout)); err != nil {
+		if err := c.SendSubscribe(community, makeTicker(c.DefaultTimeout)); err != nil {
 			c.Printf("Couldn't subscribe to community %s", community.ID().String())
 			continue
 		}
 		c.Subscribe(community.ID())
 		c.Printf("Subscribed to %s", community.ID().String())
-		if err := c.fetchFullTree(community, maxCommunities, perRequestTimeout); err != nil {
+		if err := c.fetchFullTree(community, maxCommunities, c.DefaultTimeout); err != nil {
 			c.Printf("Couldn't fetch message tree rooted at community %s: %v", community.ID().String(), err)
 			continue
 		}
