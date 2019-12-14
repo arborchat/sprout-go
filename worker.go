@@ -126,6 +126,7 @@ func (c *Worker) OnVersion(s *Conn, messageID MessageID, major, minor int) error
 }
 
 func (c *Worker) OnList(s *Conn, messageID MessageID, nodeType fields.NodeType, quantity int) error {
+	c.Printf("Received list: id:%d type:%d quantity:%d", messageID, nodeType, quantity)
 	// requires better iteration on Store types
 	nodes, err := c.SubscribableStore.Recent(nodeType, quantity)
 	if err != nil {
@@ -135,6 +136,7 @@ func (c *Worker) OnList(s *Conn, messageID MessageID, nodeType fields.NodeType, 
 }
 
 func (c *Worker) OnQuery(s *Conn, messageID MessageID, nodeIds []*fields.QualifiedHash) error {
+	c.Printf("Received query: id:%d quantity:%d", messageID, len(nodeIds))
 	results := make([]forest.Node, 0, len(nodeIds))
 	for _, id := range nodeIds {
 		node, present, err := c.SubscribableStore.Get(id)
@@ -148,6 +150,7 @@ func (c *Worker) OnQuery(s *Conn, messageID MessageID, nodeIds []*fields.Qualifi
 }
 
 func (c *Worker) OnAncestry(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, levels int) error {
+	c.Printf("Received ancestry: id:%d node:%s levels:%d", messageID, nodeID, levels)
 	ancestors := make([]forest.Node, 0, 1024)
 	currentNode, known, err := c.SubscribableStore.Get(nodeID)
 	if err != nil {
@@ -178,6 +181,7 @@ func (c *Worker) OnAncestry(s *Conn, messageID MessageID, nodeID *fields.Qualifi
 }
 
 func (c *Worker) OnLeavesOf(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error {
+	c.Printf("Received leaves_of: id:%d node:%s quantity:%d", messageID, nodeID, quantity)
 	descendants := make([]*fields.QualifiedHash, 0, 1024)
 	descendants = append(descendants, nodeID)
 	leaves := make([]forest.Node, 0, 1024)
@@ -213,6 +217,7 @@ func (c *Worker) OnLeavesOf(s *Conn, messageID MessageID, nodeID *fields.Qualifi
 }
 
 func (c *Worker) OnSubscribe(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) (err error) {
+	c.Printf("Received subscribe: id:%d community:%s", messageID, nodeID)
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("Error during subscribe: %w", err)
@@ -226,6 +231,7 @@ func (c *Worker) OnSubscribe(s *Conn, messageID MessageID, nodeID *fields.Qualif
 }
 
 func (c *Worker) OnUnsubscribe(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash) (err error) {
+	c.Printf("Received unsubscribe: id:%d community:%s", messageID, nodeID)
 	defer func() {
 		if err != nil {
 			err = fmt.Errorf("Error during unsubscribe: %w", err)
@@ -282,6 +288,7 @@ func (c *Worker) IngestNode(node forest.Node) error {
 }
 
 func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
+	c.Printf("Received announce: id:%d quantity:%d", messageID, len(nodes))
 	for _, node := range nodes {
 		shouldIngest := false
 		switch n := node.(type) {
