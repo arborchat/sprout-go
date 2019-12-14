@@ -290,6 +290,16 @@ func (c *Worker) IngestNode(node forest.Node) error {
 func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
 	c.Printf("Received announce: id:%d quantity:%d", messageID, len(nodes))
 	for _, node := range nodes {
+		// if we already have it, don't worry about it
+		// This ensures that we don't announce it again to our peers and create
+		// an infinite cycle of announcements
+		if _, alreadyInStore, err := c.SubscribableStore.Get(node.ID()); err != nil {
+			c.Printf("failed checking whether %s is already in the store: %v", node.ID(), err)
+			continue
+		} else if alreadyInStore {
+			// we already have it
+			continue
+		}
 		shouldIngest := false
 		switch n := node.(type) {
 		case *forest.Identity:
@@ -304,7 +314,8 @@ func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) e
 				continue
 			}
 		default:
-			return fmt.Errorf("Unknown node type announced: %T", node)
+			c.Printf("Unknown node type announced: %T", node)
+			return c.SendStatus(messageID, ErrorUnknownNode)
 		}
 		if shouldIngest {
 			c.Printf("Ingesting node %s", node.ID())
