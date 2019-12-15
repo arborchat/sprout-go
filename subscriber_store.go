@@ -5,14 +5,23 @@ import (
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 )
 
+// Subscription is an identifier for a particular handler function within
+// a SubscriberStore. It can be provided to delete a handler function or to
+// suppress notifications to the corresponding handler.
+type Subscription uint
+
+// the zero subscription is never used
+const neverAssigned = 0
+const firstSubscription = 1
+
 // SubscriberStore is a wrapper type that extends the forest.Store interface
 // with the observer pattern. Code can subscribe for updates each time a
 // node is inserted into the store using Add or AddAs
 type SubscriberStore struct {
 	store             forest.Store
 	requests          chan func()
-	nextSubscriberKey int
-	subscribers       map[int]func(forest.Node)
+	nextSubscriberKey Subscription
+	subscribers       map[Subscription]func(forest.Node)
 }
 
 var _ forest.Store = &SubscriberStore{}
@@ -21,9 +30,10 @@ var _ forest.Store = &SubscriberStore{}
 // forest nodes by wrapping an existing store implementation
 func NewSubscriberStore(store forest.Store) *SubscriberStore {
 	m := &SubscriberStore{
-		store:       store,
-		requests:    make(chan func()),
-		subscribers: make(map[int]func(forest.Node)),
+		store:             store,
+		requests:          make(chan func()),
+		nextSubscriberKey: firstSubscription,
+		subscribers:       make(map[Subscription]func(forest.Node)),
 	}
 	go func() {
 		for function := range m.requests {
@@ -37,12 +47,16 @@ func NewSubscriberStore(store forest.Store) *SubscriberStore {
 // invoked on each node added to the store. The returned subscription ID
 // can be used to unsubscribe later, as well as to supress notifications
 // with AddAs().
-func (m *SubscriberStore) SubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID int) {
+func (m *SubscriberStore) SubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID Subscription) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
 		subscriptionID = m.nextSubscriberKey
 		m.nextSubscriberKey++
+		// handler unsigned overflow
+		if m.nextSubscriberKey == neverAssigned {
+			m.nextSubscriberKey = firstSubscription
+		}
 		m.subscribers[subscriptionID] = handler
 	}
 	<-done
@@ -51,7 +65,7 @@ func (m *SubscriberStore) SubscribeToNewMessages(handler func(n forest.Node)) (s
 
 // UnsubscribeToNewMessages removes the handler for a given subscription from
 // the store.
-func (m *SubscriberStore) UnsubscribeToNewMessages(subscriptionID int) {
+func (m *SubscriberStore) UnsubscribeToNewMessages(subscriptionID Subscription) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
@@ -150,11 +164,8 @@ func (m *SubscriberStore) Add(node forest.Node) (err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
-		err = m.store.Add(node)
-		if err == nil {
-			for _, handler := range m.subscribers {
-				handler(node)
-			}
+		if err = m.store.Add(node); err == nil {
+			m.notifySubscribed(node, neverAssigned)
 		}
 	}
 	<-done
@@ -164,21 +175,26 @@ func (m *SubscriberStore) Add(node forest.Node) (err error) {
 // AddAs allows adding a node to the underlying store without being notified
 // of it as a new node. The addedByID (subscription id returned from SubscribeToNewMessages)
 // will not be notified of the new nodes, but all other subscribers will be.
-func (m *SubscriberStore) AddAs(node forest.Node, addedByID int) (err error) {
+func (m *SubscriberStore) AddAs(node forest.Node, addedByID Subscription) (err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
-		err = m.store.Add(node)
-		if err == nil {
-			for subscriptionID, handler := range m.subscribers {
-				if subscriptionID != addedByID {
-					handler(node)
-				}
-			}
+		if err = m.store.Add(node); err == nil {
+			m.notifySubscribed(node, addedByID)
 		}
 	}
 	<-done
 	return
+}
+
+// notifySubscribed runs all of the subscription handlers in new goroutines with
+// the provided node as input to each handler.
+func (m *SubscriberStore) notifySubscribed(node forest.Node, ignore Subscription) {
+	for subscriptionID, handler := range m.subscribers {
+		if subscriptionID != ignore {
+			go handler(node)
+		}
+	}
 }
 
 // Shut down the worker gorountine that powers this store. Subsequent

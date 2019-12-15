@@ -14,9 +14,9 @@ import (
 
 type SubscribableStore interface {
 	forest.Store
-	SubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID int)
-	UnsubscribeToNewMessages(subscriptionID int)
-	AddAs(node forest.Node, addedByID int) (err error)
+	SubscribeToNewMessages(handler func(n forest.Node)) Subscription
+	UnsubscribeToNewMessages(Subscription)
+	AddAs(forest.Node, Subscription) (err error)
 }
 
 type Worker struct {
@@ -26,7 +26,7 @@ type Worker struct {
 	*log.Logger
 	*Session
 	SubscribableStore
-	subscriptionID int
+	subscriptionID Subscription
 }
 
 func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*Worker, error) {
