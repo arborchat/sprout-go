@@ -27,7 +27,6 @@ func main() {
 	certpath := flag.String("certpath", "", "Location of the TLS public key (certificate file)")
 	keypath := flag.String("keypath", "", "Location of the TLS private key (key file)")
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
-	selftest := flag.Bool("selftest", false, "Dial yourself to verify that basic connection handling is working")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
@@ -123,36 +122,6 @@ and will establish Sprout connections to all addresses provided as arguments.
 			}
 		}
 	}()
-
-	// connect to ourselves as a test if requested
-	if *selftest {
-		go func() {
-			time.Sleep(time.Second)
-			log.Printf("Launching test connection to verify basic functionality")
-			conn, err := tls.Dial("tcp", address, &tls.Config{
-				InsecureSkipVerify: true,
-			})
-			if err != nil {
-				log.Printf("Test dial failed: %v", err)
-				return
-			}
-			defer func() {
-				if err := conn.Close(); err != nil {
-					log.Printf("Failed to close test connection: %v", err)
-					return
-				}
-				log.Printf("Closed test connection")
-			}()
-			sconn, err := sprout.NewConn(conn)
-			if err != nil {
-				log.Printf("Failed to create sprout conn from test dial: %v", err)
-			}
-			log.Printf("Sending version information on test connection")
-			if err := sconn.SendVersion(time.NewTicker(time.Second * 5).C); err != nil {
-				log.Printf("Failed to send version information from test conn: %v", err)
-			}
-		}()
-	}
 
 	// dial peers mentioned in arguments
 	for _, address := range flag.Args() {
