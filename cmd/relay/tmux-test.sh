@@ -19,30 +19,27 @@ fi
 
 # ensure we're running in tmux
 if [ -z "$TMUX" ]; then
+    # shellcheck disable=SC2068
     exec tmux -c $@
 fi
 
-build_dir=$(dirname $(realpath $0))
+build_dir=$(dirname "$(realpath "$0")")
 relay_executable=$(mktemp)
 
 echo "building relay..."
-cd "$build_dir"
-go build -o "$relay_executable"
-cd -
-
+(cd "$build_dir" && go build -o "$relay_executable")
 
 echo "generating keys..."
 keys_dir=$(mktemp -d)
-cd "$keys_dir"
-openssl req \
+(cd "$keys_dir" && openssl req \
     -x509 \
     -subj '/CN=test.com/O=Testing/C=US' \
     -newkey rsa:4096 \
     -keyout key.pem \
     -out cert.pem \
     -days 365 \
-    -nodes
-cd -
+    -nodes)
+
 central_relay_dir=$(mktemp -d)
 peer1_relay_dir=$(mktemp -d)
 peer2_relay_dir=$(mktemp -d)
@@ -83,4 +80,4 @@ for i in $peer1_relay_dir $peer2_relay_dir $peer3_relay_dir; do
 done
 
 echo "press control-c when you're done testing; make sure to kill the relays too"
-read
+read -r
