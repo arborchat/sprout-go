@@ -61,22 +61,24 @@ cp "$1"/* "$central_relay_dir"
 echo "launching relays..."
 window_name="arbor-relay-testing"
 echo "launching central relay from $central_relay_dir"
-tmux new-window -c "$central_relay_dir" -n "$window_name" "$relay_executable" \
-    -certpath "$keys_dir/cert.pem" \
-    -keypath "$keys_dir/key.pem" \
-    -grovepath "$central_relay_dir" \
-    -tls-port "$current_port"
+tmux new-window -c "$central_relay_dir" -n "$window_name" "${relay_executable} \
+    -certpath ${keys_dir}/cert.pem \
+    -keypath ${keys_dir}/key.pem \
+    -grovepath ${central_relay_dir} \
+    -tls-port ${current_port} \
+    2>&1 | tee -a ${build_dir}/center.log"
 
 for i in $peer1_relay_dir $peer2_relay_dir $peer3_relay_dir; do
     echo "Launching peer relay from $i"
     ((current_port++))
-    tmux split-window -c "$i" "$relay_executable" \
-        -certpath "$keys_dir/cert.pem" \
-        -keypath "$keys_dir/key.pem" \
-        -grovepath "$i" \
-        -tls-port "$current_port" \
+    tmux split-window -c "${i}" "${relay_executable} \
+        -certpath ${keys_dir}/cert.pem \
+        -keypath ${keys_dir}/key.pem \
+        -grovepath ${i} \
+        -tls-port ${current_port} \
         -insecure \
-        localhost:"$start_port"
+        localhost:${start_port} \
+        2>&1 | tee -a ${build_dir}/peer-${current_port}.log"
 done
 
 echo "press control-c when you're done testing; make sure to kill the relays too"
