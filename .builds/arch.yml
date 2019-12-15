@@ -28,6 +28,7 @@ tasks:
   - deploy: |
       cd sprout-go/cmd/relay
       go build
+      ssh-keyscan arbor.chat >> ~/.ssh/known_hosts
       scp relay chris@arbor.chat:/usr/local/bin/relay-new
       ssh chris@arbor.chat -- "mv /usr/local/bin/relay{,-old}; mv /usr/local/bin/relay{-new,}"
 
