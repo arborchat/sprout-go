@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
@@ -75,12 +74,12 @@ and will establish Sprout connections to all addresses provided as arguments.
 
 	// track node ids of nodes that we've recently inserted into the grove so that
 	// we know when a new FS write was us or another process
-	addedOurselves := sync.Map{}
+	addedOurselves := NewExpiringSet()
 
 	// subscribe to added messges so that we can filter them out when we get their
 	// FS watching notifications
 	messages.PresubscribeToNewMessages(func(n forest.Node) {
-		addedOurselves.Store(n.ID().String(), nil)
+		addedOurselves.Add(n.ID().String(), time.Minute)
 	})
 
 	watchLogger := log.New(log.Writer(), "watch", log.LstdFlags|log.Lshortfile)
@@ -95,8 +94,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 			watchLogger.Printf("Failed unmarshalling watched file: %s: %v", filename, err)
 			return
 		}
-		if _, ok := addedOurselves.Load(node.ID().String()); ok {
-			addedOurselves.Delete(node.ID().String())
+		if ok := addedOurselves.Has(node.ID().String()); ok {
 			watchLogger.Printf("Ignoring node %s because we wrote it", node.ID())
 			return
 		}
