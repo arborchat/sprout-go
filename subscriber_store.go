@@ -16,12 +16,12 @@ const firstSubscription = 1
 
 // SubscriberStore is a wrapper type that extends the forest.Store interface
 // with the observer pattern. Code can subscribe for updates each time a
-// node is inserted into the store using Add or AddAs
+// node is inserted into the store using Add or AddAs.
 type SubscriberStore struct {
-	store             forest.Store
-	requests          chan func()
-	nextSubscriberKey Subscription
-	subscribers       map[Subscription]func(forest.Node)
+	store                                 forest.Store
+	requests                              chan func()
+	nextSubscriberKey                     Subscription
+	postAddSubscribers, preAddSubscribers map[Subscription]func(forest.Node)
 }
 
 var _ forest.Store = &SubscriberStore{}
@@ -30,10 +30,11 @@ var _ forest.Store = &SubscriberStore{}
 // forest nodes by wrapping an existing store implementation
 func NewSubscriberStore(store forest.Store) *SubscriberStore {
 	m := &SubscriberStore{
-		store:             store,
-		requests:          make(chan func()),
-		nextSubscriberKey: firstSubscription,
-		subscribers:       make(map[Subscription]func(forest.Node)),
+		store:              store,
+		requests:           make(chan func()),
+		nextSubscriberKey:  firstSubscription,
+		postAddSubscribers: make(map[Subscription]func(forest.Node)),
+		preAddSubscribers:  make(map[Subscription]func(forest.Node)),
 	}
 	go func() {
 		for function := range m.requests {
@@ -47,17 +48,39 @@ func NewSubscriberStore(store forest.Store) *SubscriberStore {
 // invoked on each node added to the store. The returned subscription ID
 // can be used to unsubscribe later, as well as to supress notifications
 // with AddAs().
+//
+// Handler functions are invoked synchronously on the same goroutine that invokes
+// Add() or AddAs(), and should not block. If long-running code is needed in a
+// handler, launch a new goroutine.
 func (m *SubscriberStore) SubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID Subscription) {
+	return m.subscribeInMap(m.postAddSubscribers, handler)
+}
+
+// PresubscribeToNewMessages establishes the given function as a handler to be
+// invoked on each node added to the store. The returned subscription ID
+// can be used to unsubscribe later, as well as to supress notifications
+// with AddAs(). The handler function will be invoked *before* nodes are
+// inserted into the store instead of after (like a normal Subscribe).
+//
+// Handler functions are invoked synchronously on the same goroutine that invokes
+// Add() or AddAs(), and should not block. If long-running code is needed in a
+// handler, launch a new goroutine.
+func (m *SubscriberStore) PresubscribeToNewMessages(handler func(n forest.Node)) (subscriptionID Subscription) {
+	return m.subscribeInMap(m.preAddSubscribers, handler)
+}
+
+func (m *SubscriberStore) subscribeInMap(targetMap map[Subscription]func(forest.Node), handler func(n forest.Node)) (subscriptionID Subscription) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
 		subscriptionID = m.nextSubscriberKey
 		m.nextSubscriberKey++
 		// handler unsigned overflow
+		// TODO: ensure subscription reuse can't occur
 		if m.nextSubscriberKey == neverAssigned {
 			m.nextSubscriberKey = firstSubscription
 		}
-		m.subscribers[subscriptionID] = handler
+		targetMap[subscriptionID] = handler
 	}
 	<-done
 	return
@@ -66,11 +89,21 @@ func (m *SubscriberStore) SubscribeToNewMessages(handler func(n forest.Node)) (s
 // UnsubscribeToNewMessages removes the handler for a given subscription from
 // the store.
 func (m *SubscriberStore) UnsubscribeToNewMessages(subscriptionID Subscription) {
+	m.unsubscribeInMap(m.postAddSubscribers, subscriptionID)
+}
+
+// UnpresubscribeToNewMessages removes the handler for a given subscription from
+// the store.
+func (m *SubscriberStore) UnpresubscribeToNewMessages(subscriptionID Subscription) {
+	m.unsubscribeInMap(m.preAddSubscribers, subscriptionID)
+}
+
+func (m *SubscriberStore) unsubscribeInMap(targetMap map[Subscription]func(forest.Node), subscriptionID Subscription) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
-		if _, subscribed := m.subscribers[subscriptionID]; subscribed {
-			delete(m.subscribers, subscriptionID)
+		if _, subscribed := targetMap[subscriptionID]; subscribed {
+			delete(targetMap, subscriptionID)
 		}
 	}
 	<-done
@@ -164,8 +197,9 @@ func (m *SubscriberStore) Add(node forest.Node) (err error) {
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
+		m.notifySubscribed(m.preAddSubscribers, node, neverAssigned)
 		if err = m.store.Add(node); err == nil {
-			m.notifySubscribed(node, neverAssigned)
+			m.notifySubscribed(m.postAddSubscribers, node, neverAssigned)
 		}
 	}
 	<-done
@@ -179,8 +213,9 @@ func (m *SubscriberStore) AddAs(node forest.Node, addedByID Subscription) (err e
 	done := make(chan struct{})
 	m.requests <- func() {
 		defer close(done)
+		m.notifySubscribed(m.preAddSubscribers, node, addedByID)
 		if err = m.store.Add(node); err == nil {
-			m.notifySubscribed(node, addedByID)
+			m.notifySubscribed(m.postAddSubscribers, node, addedByID)
 		}
 	}
 	<-done
@@ -189,10 +224,10 @@ func (m *SubscriberStore) AddAs(node forest.Node, addedByID Subscription) (err e
 
 // notifySubscribed runs all of the subscription handlers in new goroutines with
 // the provided node as input to each handler.
-func (m *SubscriberStore) notifySubscribed(node forest.Node, ignore Subscription) {
-	for subscriptionID, handler := range m.subscribers {
+func (m *SubscriberStore) notifySubscribed(targetMap map[Subscription]func(forest.Node), node forest.Node, ignore Subscription) {
+	for subscriptionID, handler := range targetMap {
 		if subscriptionID != ignore {
-			go handler(node)
+			handler(node)
 		}
 	}
 }
