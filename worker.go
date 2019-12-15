@@ -83,26 +83,29 @@ func (c *Worker) Run() {
 	}
 }
 
+// Asynchronously announce new node if appropriate
 func (c *Worker) HandleNewNode(node forest.Node) {
-	switch n := node.(type) {
-	// TODO: DRY this out
-	case *forest.Identity:
-		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(c.DefaultTimeout)); err != nil {
-			c.Printf("Error announcing new identity: %v", err)
-		}
-	case *forest.Community:
-		if err := c.SendAnnounce([]forest.Node{n}, makeTicker(c.DefaultTimeout)); err != nil {
-			c.Printf("Error announcing new community: %v", err)
-		}
-	case *forest.Reply:
-		if c.IsSubscribed(&n.CommunityID) {
-			if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(c.DefaultTimeout).C); err != nil {
-				c.Printf("Error announcing new reply: %v", err)
+	go func() {
+		switch n := node.(type) {
+		// TODO: DRY this out
+		case *forest.Identity:
+			if err := c.SendAnnounce([]forest.Node{n}, makeTicker(c.DefaultTimeout)); err != nil {
+				c.Printf("Error announcing new identity: %v", err)
 			}
+		case *forest.Community:
+			if err := c.SendAnnounce([]forest.Node{n}, makeTicker(c.DefaultTimeout)); err != nil {
+				c.Printf("Error announcing new community: %v", err)
+			}
+		case *forest.Reply:
+			if c.IsSubscribed(&n.CommunityID) {
+				if err := c.SendAnnounce([]forest.Node{n}, time.NewTicker(c.DefaultTimeout).C); err != nil {
+					c.Printf("Error announcing new reply: %v", err)
+				}
+			}
+		default:
+			log.Printf("Unknown node type: %T", n)
 		}
-	default:
-		log.Printf("Unknown node type: %T", n)
-	}
+	}()
 }
 
 func (c *Worker) OnVersion(s *Conn, messageID MessageID, major, minor int) error {
