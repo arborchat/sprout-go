@@ -30,5 +30,5 @@ tasks:
       go build
       ssh-keyscan arbor.chat >> ~/.ssh/known_hosts
       scp -i ~/.ssh/409bbfeb-afb8-4f22-bd08-54fd4cf748d5 relay chris@arbor.chat:/usr/local/bin/relay-new
-      ssh -i ~/.ssh/409bbfeb-afb8-4f22-bd08-54fd4cf748d5 chris@arbor.chat -- "mv /usr/local/bin/relay{,-old}; mv /usr/local/bin/relay{-new,}"
+      ssh -i ~/.ssh/409bbfeb-afb8-4f22-bd08-54fd4cf748d5 chris@arbor.chat -- "mv /usr/local/bin/relay{,-old}; mv /usr/local/bin/relay{-new,}; sudo systemctl restart arbor-relay-firejail.service"
 
