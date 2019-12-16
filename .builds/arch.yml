@@ -4,8 +4,8 @@ packages:
 sources:
   - https://git.sr.ht/~whereswaldon/sprout-go
 environment:
-  oses: 'linux darwin openbsd freebsd netbsd windows'
-  github_mirror_url: "git@github.com:arborchat/sprout-go.git"
+  github_mirror_url: git@github.com:arborchat/sprout-go.git
+  oses: linux darwin openbsd freebsd netbsd windows
 secrets:
   - 82666cbf-0a25-4083-81d4-5f65fb85ec82
   - 409bbfeb-afb8-4f22-bd08-54fd4cf748d5
@@ -14,9 +14,11 @@ tasks:
   - test: |
       cd sprout-go
       go test -cover
+      touch /tmp/tests
   - cross_compile: |
       cd sprout-go
       for os in $oses ; do env GOOS="$os" go build ; done
+      touch /tmp/cross-compile
   - annotate: |
       go get git.sr.ht/~sircmpwn/annotatego
       cd sprout-go
@@ -27,8 +29,8 @@ tasks:
       ./.builds/mirror.sh "$github_mirror_url"
   - deploy: |
       cd sprout-go/cmd/relay
+      test -e /tmp/tests && test -e /tmp/cross-compile && test $(git rev-parse --abbrev-ref HEAD) = "master"
       go build
       ssh-keyscan arbor.chat >> ~/.ssh/known_hosts
       scp -i ~/.ssh/409bbfeb-afb8-4f22-bd08-54fd4cf748d5 relay chris@arbor.chat:/usr/local/bin/relay-new
       ssh -i ~/.ssh/409bbfeb-afb8-4f22-bd08-54fd4cf748d5 chris@arbor.chat -- "mv /usr/local/bin/relay{,-old}; mv /usr/local/bin/relay{-new,}; sudo systemctl restart arbor-relay-firejail.service"
-
