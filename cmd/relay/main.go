@@ -28,7 +28,7 @@ func main() {
 	keypath := flag.String("keypath", "", "Location of the TLS private key (key file)")
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
-	tlsIP := flag.String("tls-ip", "", "TLS listen IP address")
+	tlsIP := flag.String("tls-ip", "127.0.0.1", "TLS listen IP address")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
 			`Usage:
