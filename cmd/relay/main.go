@@ -28,6 +28,7 @@ func main() {
 	keypath := flag.String("keypath", "", "Location of the TLS private key (key file)")
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
+	tlsIP := flag.String("tls-ip", "", "TLS listen IP address")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
 			`Usage:
@@ -52,7 +53,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 	}
 	tlsConfig.BuildNameToCertificate()
 
-	address := fmt.Sprintf(":%d", *tlsPort)
+	address := fmt.Sprintf("%s:%d", *tlsIP, *tlsPort)
 	listener, err := tls.Listen("tcp", address, tlsConfig)
 	if err != nil {
 		log.Fatalf("Failed to start TLS listener on address %s: %v", address, err)
