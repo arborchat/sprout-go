@@ -53,10 +53,11 @@ and will establish Sprout connections to all addresses provided as arguments.
 	}
 	tlsConfig.BuildNameToCertificate()
 
-	address := fmt.Sprintf("%s:%d", *tlsIP, *tlsPort)
-	listener, err := tls.Listen("tcp", address, tlsConfig)
+	listenAddress := fmt.Sprintf("%s:%d", *tlsIP, *tlsPort)
+	log.Printf("Listening on %s", listenAddress)
+	listener, err := tls.Listen("tcp", listenAddress, tlsConfig)
 	if err != nil {
-		log.Fatalf("Failed to start TLS listener on address %s: %v", address, err)
+		log.Fatalf("Failed to start TLS listener on address %s: %v", listenAddress, err)
 	}
 	done := make(chan struct{})
 
