@@ -1,0 +1,25 @@
+name: arbor-relay
+base: core18
+version: git
+summary: Relay for Arbor clients!
+description: |
+  Chat with your friends while modeling conversations as
+  trees. This is required to relay messages to the network.
+
+grade: devel
+confinement: strict
+
+plugs:
+  home: null
+  network-bind: null
+
+parts:
+  relay:
+    plugin: go
+    source: .
+    build-environment:
+      - CGO_ENABLED: "0"
+
+apps:
+  relay:
+    command: bin/relay
