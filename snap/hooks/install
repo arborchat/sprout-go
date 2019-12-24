@@ -13,5 +13,9 @@ CERT_PATH="$SNAP_COMMON/$CERT"
 DAYS=365
 SUBJ="/C=AA/ST=BB/L=CC/O=DD/OU=EE/CN=FF"
 
+# Generate some defualt keys
 openssl req -x509 -newkey "$KEY_TYPE":"$KEY_LEN" -keyout "$KEY_PATH" -out "$CERT_PATH" -days "$DAYS" -nodes -subj "$SUBJ"
 chmod 0444 "$KEY_PATH" "$CERT_PATH"
+
+# Unset the RELAY_ARGS
+snapctl set RELAY_ARGS!

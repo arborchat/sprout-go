@@ -21,7 +21,13 @@ parts:
       - CGO_ENABLED: "0"
     stage-packages:
       - openssl
+  relay-daemon:
+    plugin: dump
+    source: wrappers/
 
 apps:
   relay:
     command: bin/relay
+  relay-daemon:
+    command: relay-wrapper
+    daemon: simple
