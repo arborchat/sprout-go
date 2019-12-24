@@ -19,6 +19,8 @@ parts:
     source: .
     build-environment:
       - CGO_ENABLED: "0"
+    stage-packages:
+      - openssl
 
 apps:
   relay:
