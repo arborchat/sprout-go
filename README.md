@@ -30,23 +30,23 @@ Using this snap will:
 - Generate certificates on install: `/var/snap/arbor-relay/common/[cert|key].pem`
 - Allow you to run an Arbor relay: `arbor-relay.relay $RELAY_ARGS`
 
-The certificates from installation are provided as a convenience and are not explicitly required to run the relay.
+The certificates generated from the snap installation are provided as a convenience, but are not explicitly required to run the relay. You'll have to bring your own certs to the table if you don't want to use ours.
 
 ### Developers Building the Relay Snap
 
 Checkout the [getting started](https://snapcraft.io/docs/getting-started) section of the Snapcraft documentation and familiarize yourself with [snapping Go applications](https://snapcraft.io/#go).
 
-Once you have `snap`, `snapcraft`, and `multipass` installed you can build the snap:
+Once you have `snap`, `snapcraft`, and `multipass` installed you can build the snap in one of the following ways:
 
 ```sh
 # Build from the base directory
 snapcraft
 
-# Build with --debug to open a shell in the VM/container
+# Or, build with --debug to open a shell in the VM/container
 # if a part of the build fails.
 snapcraft --debug
 
-# Use LXD container instead of multipass VMs
+# Or, use LXD container instead of multipass VMs
 snapcraft --use-lxd
 ```
 
@@ -66,7 +66,7 @@ snap install --dangerous arbor-relay*.snap
 
 ### Running the Relay Snap
 
-You'll have `arbor-realy.realy` in your path now. I know, typing that will get a little annoying... This is short-term, but you may alias this within snap to make it more convenient in the meantime:
+You'll have `arbor-relay.realy` in your path now. I know, typing that will get a little annoying... This is short-term, but you may alias this within snap to make it more convenient in the meantime:
 
 ```sh
 snap alias arbor-relay.relay relay
