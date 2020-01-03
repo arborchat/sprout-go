@@ -1,16 +1,23 @@
 #!/bin/sh -e
 
-enable="$(snapctl get enable || echo no)"
+isenabled="$(snapctl get isenabled || echo no)"
 certpath="$(snapctl get certpath)"
 keypath="$(snapctl get keypath)"
 grovepath="$(snapctl get grovepath)"
 server="$(snapctl get server)"
 RELAY_ARGS="-certpath $certpath -keypath $keypath -grovepath $grovepath"
 
-if [ "$enable" == "no" ]; then
-    echo "Relay service is not enabled. Use 'snap set arbor-relay enable=yes' to enable then restart the service."
-    exit 1
-else
-    echo "Relay enabled. Starting..."
-    relay $RELAY_ARGS
-fi
+case "$isenabled" in
+    "no")
+        echo "Relay service is not enabled. Use 'snap set arbor-relay isenabled=yes' to enable then restart the service."
+        exit 1
+        ;;
+    "yes")
+        echo "Relay enabled. Starting..."
+        relay $RELAY_ARGS
+	;;
+    *)
+        echo "Something went wrong starting the relay..."
+        exit 2
+        ;;
+esac

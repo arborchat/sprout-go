@@ -21,4 +21,4 @@ openssl req -x509 -newkey "$KEY_TYPE":"$KEY_LEN" -keyout "$KEY_PATH" -out "$CERT
 chmod 0444 "$KEY_PATH" "$CERT_PATH"
 
 # Prevent the relay service from starting after install
-snapctl set enable no
+snapctl set isenabled=no
