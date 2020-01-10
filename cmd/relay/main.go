@@ -139,44 +139,15 @@ and will establish Sprout connections to all addresses provided as arguments.
 		}
 	}()
 
+	var peerTlsConfig *tls.Config
+	if *insecure {
+		peerTlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
 	// dial peers mentioned in arguments
 	for _, address := range flag.Args() {
-		go func(addr string) {
-			var tlsConfig *tls.Config
-			if *insecure {
-				tlsConfig = &tls.Config{
-					InsecureSkipVerify: true,
-				}
-			}
-			firstAttempt := true
-			for {
-				if !firstAttempt {
-					log.Printf("Restarting worker for address %s", addr)
-					time.Sleep(time.Second)
-				}
-				firstAttempt = false
-				conn, err := tls.Dial("tcp", addr, tlsConfig)
-				if err != nil {
-					log.Printf("Failed to connect to %s: %v", addr, err)
-					continue
-				}
-				worker, err := sprout.NewWorker(done, conn, messages)
-				if err != nil {
-					log.Printf("Failed launching worker to connect to address %s: %v", addr, err)
-					continue
-				}
-				worker.Logger = log.New(log.Writer(), fmt.Sprintf("worker-%v ", addr), log.Flags())
-				go worker.BootstrapLocalStore(1024)
-
-				// block until the worker dies
-				worker.Run()
-				select {
-				case <-done:
-					return
-				default:
-				}
-			}
-		}(address)
+		sprout.LaunchSupervisedWorker(done, address, messages, peerTlsConfig, log.New(log.Writer(), "", log.Flags()))
 	}
 
 	// Block until a signal is received.
