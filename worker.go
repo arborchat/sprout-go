@@ -371,14 +371,14 @@ func (c *Worker) BootstrapLocalStore(maxCommunities int) {
 		}
 		c.Subscribe(community.ID())
 		c.Printf("Subscribed to %s", community.ID().String())
-		if err := c.fetchFullTree(community, maxCommunities, c.DefaultTimeout); err != nil {
+		if err := c.synchronizeFullTree(community, maxCommunities, c.DefaultTimeout); err != nil {
 			c.Printf("Couldn't fetch message tree rooted at community %s: %v", community.ID().String(), err)
 			continue
 		}
 	}
 }
 
-func (c *Worker) fetchFullTree(root forest.Node, maxNodes int, perRequestTimeout time.Duration) error {
+func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestTimeout time.Duration) error {
 	leafList, err := c.SendLeavesOf(root.ID(), maxNodes, makeTicker(perRequestTimeout))
 	if err != nil {
 		return fmt.Errorf("couldn't fetch leaves of node %s: %v", root.ID().String(), err)
