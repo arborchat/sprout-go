@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
+	"git.sr.ht/~whereswaldon/forest-go/archive"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 )
 
@@ -381,8 +382,27 @@ func (c *Worker) BootstrapLocalStore(maxCommunities int) {
 func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestTimeout time.Duration) error {
 	leafList, err := c.SendLeavesOf(root.ID(), maxNodes, makeTicker(perRequestTimeout))
 	if err != nil {
-		return fmt.Errorf("couldn't fetch leaves of node %s: %v", root.ID().String(), err)
+		return fmt.Errorf("couldn't fetch leaves of node %s: %w", root.ID(), err)
 	}
+	c.Printf("Fetched leaves of %s", root.ID())
+	archive := archive.New(c.SubscribableStore)
+	localLeaves, err := archive.LeavesOf(root.ID())
+	if err != nil {
+		return fmt.Errorf("couldn't list local leaves of node %s: %w", root.ID(), err)
+	}
+	localLeafNodes := make([]forest.Node, 0, len(localLeaves))
+	for i := range localLeafNodes {
+		node, inStore, err := archive.Get(localLeaves[i])
+		if err != nil {
+			return fmt.Errorf("couldn't get local node %s: %w", localLeaves[i], err)
+		} else if inStore {
+			localLeafNodes = append(localLeafNodes, node)
+		}
+	}
+	if err := c.SendAnnounce(localLeafNodes, makeTicker(perRequestTimeout)); err != nil {
+		return fmt.Errorf("failed announcing available local nodes: %w", err)
+	}
+	c.Printf("Announced local leaves of %s to peer", root.ID())
 	for _, leaf := range leafList.Nodes {
 		if _, alreadyInStore, err := c.Get(leaf.ID()); err != nil {
 			return fmt.Errorf("failed checking if we already have leaf node %s: %w", leaf.ID().String(), err)
@@ -409,6 +429,7 @@ func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestT
 			}
 		}
 	}
+	c.Printf("Finished synchronizing tree rooted at %s with peer", root.ID())
 	return nil
 }
 
