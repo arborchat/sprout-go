@@ -391,7 +391,7 @@ func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestT
 		return fmt.Errorf("couldn't list local leaves of node %s: %w", root.ID(), err)
 	}
 	localLeafNodes := make([]forest.Node, 0, len(localLeaves))
-	for i := range localLeafNodes {
+	for i := range localLeaves {
 		node, inStore, err := archive.Get(localLeaves[i])
 		if err != nil {
 			return fmt.Errorf("couldn't get local node %s: %w", localLeaves[i], err)
