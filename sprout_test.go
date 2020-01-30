@@ -207,7 +207,7 @@ func randomString(length int) string {
 func randomIdentity(t *testing.T) *forest.Identity {
 	signer := testkeys.Signer(t, testkeys.PrivKey1)
 	name := randomString(12)
-	id, err := forest.NewIdentity(signer, name, "")
+	id, err := forest.NewIdentity(signer, name, []byte{})
 	if err != nil {
 		t.Errorf("Failed to generate test identity: %v", err)
 		return nil
