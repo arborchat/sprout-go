@@ -1,0 +1,24 @@
+#!/bin/sh -e
+# Generate certs for the relay so the user doesn't
+# have to do it. This runs only on first install of the snap.
+#
+# Note: Commands that run in an install hook act as
+# the root user. 
+
+# SNAP_COMMON is set by snapcraft: https://snapcraft.io/docs/environment-variables
+KEY_TYPE=rsa
+KEY_LEN=4096
+KEY=key.pem
+CERT=cert.pem
+KEY_PATH="$SNAP_COMMON/$KEY"
+CERT_PATH="$SNAP_COMMON/$CERT"
+DAYS=365
+SUBJ="/C=AA/ST=BB/L=CC/O=DD/OU=EE/CN=FF"
+
+# Generate some defualt keys
+openssl req -x509 -newkey "$KEY_TYPE":"$KEY_LEN" -keyout "$KEY_PATH" -out "$CERT_PATH" -days "$DAYS" -nodes -subj "$SUBJ"
+# Certs need to be readable by users other than root
+chmod 0444 "$KEY_PATH" "$CERT_PATH"
+
+# Prevent the relay service from starting after install
+snapctl set isenabled=no

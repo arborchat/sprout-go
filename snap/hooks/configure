@@ -1,0 +1,7 @@
+#!/bin/sh -e
+
+isenabled="$(snapctl get isenabled)"
+certpath="$(snapctl get certpath)"
+keypath="$(snapctl get keypath)"
+grovepath="$(snapctl get grovepath)"
+server="$(snapctl get server)"
