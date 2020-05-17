@@ -12,6 +12,7 @@ import (
 
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/grove"
+	"git.sr.ht/~whereswaldon/forest-go/store"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 	"git.sr.ht/~whereswaldon/sprout-go/watch"
 )
@@ -71,7 +72,7 @@ and will establish Sprout connections to all addresses provided as arguments.
 	if err != nil {
 		log.Fatalf("Failed to create grove at %s: %v", *grovePath, err)
 	}
-	messages := sprout.NewSubscriberStore(grove)
+	messages := store.NewArchive(grove)
 	defer messages.Destroy()
 
 	// track node ids of nodes that we've recently inserted into the grove so that

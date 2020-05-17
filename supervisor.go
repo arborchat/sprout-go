@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"git.sr.ht/~whereswaldon/forest-go/store"
 )
 
 // LaunchSupervisedWorker launches a worker in a new goroutine that will
@@ -13,7 +15,7 @@ import (
 // `logger`.
 //
 // BUG(whereswaldon): this interface is experimental and likely to change.
-func LaunchSupervisedWorker(done <-chan struct{}, addr string, store SubscribableStore, tlsConfig *tls.Config, logger *log.Logger) {
+func LaunchSupervisedWorker(done <-chan struct{}, addr string, s store.ExtendedStore, tlsConfig *tls.Config, logger *log.Logger) {
 	go func() {
 		firstAttempt := true
 		for {
@@ -27,7 +29,7 @@ func LaunchSupervisedWorker(done <-chan struct{}, addr string, store Subscribabl
 				logger.Printf("Failed to connect to %s: %v", addr, err)
 				continue
 			}
-			worker, err := NewWorker(done, conn, store)
+			worker, err := NewWorker(done, conn, s)
 			if err != nil {
 				logger.Printf("Failed launching worker to connect to address %s: %v", addr, err)
 				continue

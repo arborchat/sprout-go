@@ -13,27 +13,20 @@ import (
 	"git.sr.ht/~whereswaldon/forest-go/store"
 )
 
-type SubscribableStore interface {
-	forest.Store
-	SubscribeToNewMessages(handler func(n forest.Node)) Subscription
-	UnsubscribeToNewMessages(Subscription)
-	AddAs(forest.Node, Subscription) (err error)
-}
-
 type Worker struct {
 	Done           <-chan struct{}
 	DefaultTimeout time.Duration
 	*Conn
 	*log.Logger
 	*Session
-	SubscribableStore
-	subscriptionID Subscription
+	SubscribableStore store.ExtendedStore
+	subscriptionID    store.Subscription
 }
 
-func NewWorker(done <-chan struct{}, conn net.Conn, store SubscribableStore) (*Worker, error) {
+func NewWorker(done <-chan struct{}, conn net.Conn, s store.ExtendedStore) (*Worker, error) {
 	w := &Worker{
 		Done:              done,
-		SubscribableStore: store,
+		SubscribableStore: s,
 		Logger:            log.New(log.Writer(), "", log.LstdFlags|log.Lshortfile),
 		DefaultTimeout:    time.Minute,
 	}
@@ -280,7 +273,7 @@ func (c *Worker) IngestNode(node forest.Node) error {
 			if err := ancestor.ValidateDeep(c.SubscribableStore); err != nil {
 				return fmt.Errorf("validation failed for ancestor %s: %w", ancestor.ID(), err)
 			}
-			if err := c.AddAs(ancestor, c.subscriptionID); err != nil {
+			if err := c.SubscribableStore.AddAs(ancestor, c.subscriptionID); err != nil {
 				return fmt.Errorf("failed inserting ancestory %s into store: %w", ancestor.ID(), err)
 			}
 		}
@@ -362,7 +355,7 @@ func (c *Worker) BootstrapLocalStore(maxCommunities int) {
 			c.Printf("Couldn't fetch author information for node %s: %v", community.ID().String(), err)
 			continue
 		}
-		if err := c.AddAs(community, c.subscriptionID); err != nil {
+		if err := c.SubscribableStore.AddAs(community, c.subscriptionID); err != nil {
 			c.Printf("Couldn't add community %s to store: %v", community.ID().String(), err)
 			continue
 		}
@@ -404,7 +397,7 @@ func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestT
 	}
 	c.Printf("Announced local leaves of %s to peer", root.ID())
 	for _, leaf := range leafList.Nodes {
-		if _, alreadyInStore, err := c.Get(leaf.ID()); err != nil {
+		if _, alreadyInStore, err := c.SubscribableStore.Get(leaf.ID()); err != nil {
 			return fmt.Errorf("failed checking if we already have leaf node %s: %w", leaf.ID().String(), err)
 		} else if alreadyInStore {
 			continue
@@ -424,7 +417,7 @@ func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestT
 			if err := ancestor.ValidateDeep(c.SubscribableStore); err != nil {
 				return fmt.Errorf("couldn't validate node %s: %w", ancestor.ID().String(), err)
 			}
-			if err := c.AddAs(ancestor, c.subscriptionID); err != nil {
+			if err := c.SubscribableStore.AddAs(ancestor, c.subscriptionID); err != nil {
 				return fmt.Errorf("couldn't add node %s to store: %w", ancestor.ID().String(), err)
 			}
 		}
@@ -450,7 +443,7 @@ func (c *Worker) ensureAuthorAvailable(node forest.Node, perRequestTimeout time.
 	default:
 		return fmt.Errorf("unsupported type in ensureAuthorAvailable: %T", n)
 	}
-	_, inStore, err := c.GetIdentity(authorID)
+	_, inStore, err := c.SubscribableStore.GetIdentity(authorID)
 	if err != nil {
 		return fmt.Errorf("failed looking for author id %s in store: %w", authorID.String(), err)
 	}
@@ -468,7 +461,7 @@ func (c *Worker) ensureAuthorAvailable(node forest.Node, perRequestTimeout time.
 	if err := author.ValidateDeep(c.SubscribableStore); err != nil {
 		return fmt.Errorf("unable to validate author %s: %w", author.ID().String(), err)
 	}
-	if err := c.AddAs(author, c.subscriptionID); err != nil {
+	if err := c.SubscribableStore.AddAs(author, c.subscriptionID); err != nil {
 		return fmt.Errorf("failed inserting new valid author %s into store: %w", author.ID().String(), err)
 	}
 	return nil
