@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"git.sr.ht/~whereswaldon/forest-go"
-	"git.sr.ht/~whereswaldon/forest-go/archive"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
+	"git.sr.ht/~whereswaldon/forest-go/store"
 )
 
 type SubscribableStore interface {
@@ -385,7 +385,7 @@ func (c *Worker) synchronizeFullTree(root forest.Node, maxNodes int, perRequestT
 		return fmt.Errorf("couldn't fetch leaves of node %s: %w", root.ID(), err)
 	}
 	c.Printf("Fetched leaves of %s", root.ID())
-	archive := archive.New(c.SubscribableStore)
+	archive := store.NewArchive(c.SubscribableStore)
 	localLeaves, err := archive.LeavesOf(root.ID())
 	if err != nil {
 		return fmt.Errorf("couldn't list local leaves of node %s: %w", root.ID(), err)
