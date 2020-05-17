@@ -4,6 +4,10 @@ that speak the Sprout Protocol. The Sprout Protocol is specified here:
 
 https://man.sr.ht/~whereswaldon/arborchat/specifications/sprout.md
 
+NOTE: this package requires using a fork of golang.org/x/crypto, and you must therefore include the following in your `go.mod`:
+
+     replace golang.org/x/crypto => github.com/ProtonMail/crypto <version-from-sprout-go's-go.mod>
+
 This package exports several important types.
 
 The Conn type wraps a connection-oriented transport (usually a TCP connection)

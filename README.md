@@ -7,6 +7,11 @@ This is an implementation of the [Sprout Protocol](https://man.sr.ht/~whereswald
 to send and receive protocol messages in Sprout. Sprout is one part of the
 Arbor Chat project.
 
+> NOTE: this package requires using a fork of golang.org/x/crypto, and you must therefore include the following in your `go.mod`:
+> ```
+>     replace golang.org/x/crypto => github.com/ProtonMail/crypto <version-from-sprout-go's-go.mod>
+> ```
+
 ## About Arbor
 
 ![arbor logo](https://git.sr.ht/~whereswaldon/forest-go/blob/master/img/arbor-logo.png)
