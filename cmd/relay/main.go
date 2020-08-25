@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"git.sr.ht/~whereswaldon/forest-go/store"
 	sprout "git.sr.ht/~whereswaldon/sprout-go"
 	"git.sr.ht/~whereswaldon/sprout-go/watch"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func tickerChan(seconds int) <-chan time.Time {
@@ -30,6 +33,7 @@ func main() {
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
 	tlsIP := flag.String("tls-ip", "127.0.0.1", "TLS listen IP address")
+	metricsAddress := flag.String("metrics-address", "127.0.0.1:2112", "Address on which to serve prometheus metrics")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
 			`Usage:
@@ -61,6 +65,13 @@ and will establish Sprout connections to all addresses provided as arguments.
 		log.Fatalf("Failed to start TLS listener on address %s: %v", listenAddress, err)
 	}
 	done := make(chan struct{})
+
+	if *metricsAddress != "" {
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			http.ListenAndServe(*metricsAddress, nil)
+		}()
+	}
 
 	// Set up channel on which to send signal notifications.
 	// We must use a buffered channel or risk missing the signal
