@@ -1,6 +1,7 @@
-image: archlinux
+image: debian/testing
 packages:
-  - go
+    - curl
+    - golang
 sources:
   - https://git.sr.ht/~whereswaldon/sprout-go
 environment:
