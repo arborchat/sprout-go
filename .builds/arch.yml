@@ -5,11 +5,16 @@ sources:
   - https://git.sr.ht/~whereswaldon/sprout-go
 environment:
   github_mirror_url: git@github.com:arborchat/sprout-go.git
-  oses: linux darwin openbsd freebsd netbsd windows
+  #TODO: put openbsd back after figuring out compilation problem
+  oses: linux darwin freebsd netbsd windows
 secrets:
   - 82666cbf-0a25-4083-81d4-5f65fb85ec82
   - 409bbfeb-afb8-4f22-bd08-54fd4cf748d5
   - 3f11ff14-dff1-45ca-990c-c69873656f63
+triggers:
+ - action: email
+   condition: always
+   to: ~whereswaldon/arbor-ci@lists.sr.ht
 tasks:
   - test: |
       cd sprout-go
