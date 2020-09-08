@@ -1,7 +1,7 @@
 git.sr.ht/~whereswaldon/forest-go v0.0.0-20200908023146-ee23841ca265 h1:fk98DKjCg7OIAHQCqr2yLCyXSyGhFidEHHe8IgfqjNI=
 git.sr.ht/~whereswaldon/forest-go v0.0.0-20200908023146-ee23841ca265/go.mod h1:aGmm4R7ifFBvJWOHINDvZcKVOu+ODkD75NmNm/O0zME=
-github.com/ProtonMail/crypto v0.0.0-20200416114516-1fa7f403fb9c h1:DAvlgde2Stu18slmjwikiMPs/CKPV35wSvmJS34z0FU=
-github.com/ProtonMail/crypto v0.0.0-20200416114516-1fa7f403fb9c/go.mod h1:Pxr7w4gA2ikI4sWyYwEffm+oew1WAJHzG1SiDpQMkrI=
+github.com/ProtonMail/crypto v0.0.0-20200420072808-71bec3603bf3 h1:JW27/kGLQzeM1Fxg5YQhdkTEAU7HIAHMgSag35zVTnY=
+github.com/ProtonMail/crypto v0.0.0-20200420072808-71bec3603bf3/go.mod h1:Pxr7w4gA2ikI4sWyYwEffm+oew1WAJHzG1SiDpQMkrI=
 github.com/fsnotify/fsnotify v1.4.7 h1:IXs+QLmnXW2CcXuY+8Mzv/fWEsPGWxqefPtCP5CnV9I=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
