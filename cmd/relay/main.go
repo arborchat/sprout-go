@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"time"
 
+	_ "net/http/pprof"
+
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/grove"
 	"git.sr.ht/~whereswaldon/forest-go/store"
@@ -33,6 +35,7 @@ func main() {
 	insecure := flag.Bool("insecure", false, "Don't verify the TLS certificates of addresses provided as arguments")
 	tlsPort := flag.Int("tls-port", 7777, "TLS listen port")
 	tlsIP := flag.String("tls-ip", "127.0.0.1", "TLS listen IP address")
+	profilingAddr := flag.String("profiling-addr", "", "pprof http profiling address")
 	metricsAddress := flag.String("metrics-address", "127.0.0.1:2112", "Address on which to serve prometheus metrics")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
@@ -47,6 +50,11 @@ and will establish Sprout connections to all addresses provided as arguments.
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	if *profilingAddr != "" {
+		log.Printf("Serving pprof on %s", *profilingAddr)
+		go func() { log.Println(http.ListenAndServe(*profilingAddr, nil)) }()
+	}
 
 	cert, err := tls.LoadX509KeyPair(*certpath, *keypath)
 	if err != nil {
