@@ -3,7 +3,7 @@ module git.sr.ht/~whereswaldon/sprout-go/cmd/relay
 go 1.15
 
 require (
-	git.sr.ht/~whereswaldon/forest-go v0.0.0-20200908023146-ee23841ca265
+	git.sr.ht/~whereswaldon/forest-go v0.0.0-20200917012818-960be2d2c5cc
 	git.sr.ht/~whereswaldon/sprout-go v0.0.0-20200908023616-4e6573e18230
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/prometheus/client_golang v1.7.1

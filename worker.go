@@ -179,36 +179,25 @@ func (c *Worker) OnAncestry(s *Conn, messageID MessageID, nodeID *fields.Qualifi
 
 func (c *Worker) OnLeavesOf(s *Conn, messageID MessageID, nodeID *fields.QualifiedHash, quantity int) error {
 	c.Printf("Received leaves_of: id:%d node:%s quantity:%d", messageID, nodeID, quantity)
-	descendants := make([]*fields.QualifiedHash, 0, 1024)
-	descendants = append(descendants, nodeID)
-	leaves := make([]forest.Node, 0, 1024)
-	seen := make(map[string]struct{})
-	for len(descendants) > 0 {
-		current := descendants[0]
-		descendants = descendants[1:]
-		seen[current.String()] = struct{}{}
-		children, err := c.SubscribableStore.Children(current)
-		if err != nil {
-			return fmt.Errorf("failed fetching children for %v: %w", current, err)
-		}
-		if len(children) == 0 {
-			node, has, err := c.SubscribableStore.Get(current)
-			if err != nil {
-				return fmt.Errorf("failed fetching node for %v: %w", current, err)
-			} else if !has {
-				// not sure what to do here
-				continue
-			}
-			leaves = append(leaves, node)
-		}
-		for _, child := range children {
-			if _, alreadySeen := seen[child.String()]; !alreadySeen {
-				descendants = append(descendants, child)
-			}
-		}
+	leafIDs, err := c.SubscribableStore.DescendantsOf(nodeID)
+	if err != nil {
+		return fmt.Errorf("failed finding descendants of %s: %w", nodeID, err)
 	}
+	leaves := make([]forest.Node, 0, len(leafIDs))
+	for i := range leafIDs {
+		node, has, err := c.SubscribableStore.Get(leafIDs[i])
+		if err != nil {
+			return fmt.Errorf("failed finding %s locally: %w", leafIDs[i], err)
+		} else if !has {
+			continue
+		}
+		leaves = append(leaves, node)
+	}
+	sort.Slice(leaves, func(i, j int) bool {
+		return leaves[i].CreatedAt().Before(leaves[j].CreatedAt())
+	})
 	if len(leaves) > quantity {
-		leaves = leaves[:quantity]
+		leaves = leaves[len(leaves)-quantity:]
 	}
 	return s.SendResponse(messageID, leaves)
 }
