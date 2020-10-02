@@ -65,21 +65,38 @@ Here's an example session that you could replicate:
 
 ```
 version 1 0.0
+```
+
+Response:
+
+```
 status 1 0
 ```
 
 We advertise our protocol version as 0.0 and the relay agrees to use that version.
 
+
 ```
 list 2 1 3
+```
+
+Response:
+
+```
 response 2 1
 SHA512_B32__mw9nEYu_XAgnw0mRRNO60J2bqIOOBmalIXgOqxoKV-o <base64url-node-data>
 ```
 
 We request a list of the three most recent communities. We only get one back because the relay currently only knows about one.
 
+
 ```
 leaves_of 3 SHA512_B32__mw9nEYu_XAgnw0mRRNO60J2bqIOOBmalIXgOqxoKV-o 3
+```
+
+Response:
+
+```
 response 3 3
 SHA512_B32__S7wybDxauEZEYJCRenemN2WB5woupuHlRU-Gj5eVU8M <base64url-node-data>
 SHA512_B32__GITqdhoPqbECv6Sb03zW8H7Ry0M8dScmQwMcrdeoEwI <base64url-node-data>
