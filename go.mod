@@ -3,7 +3,7 @@ module git.sr.ht/~whereswaldon/sprout-go
 go 1.14
 
 require (
-	git.sr.ht/~whereswaldon/forest-go v0.0.0-20200917012818-960be2d2c5cc
+	git.sr.ht/~whereswaldon/forest-go v0.0.0-20201011203633-e3b60d5a8e86
 	github.com/fsnotify/fsnotify v1.4.7
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a // indirect
 	golang.org/x/sys v0.0.0-20190626150813-e07cf5db2756 // indirect
