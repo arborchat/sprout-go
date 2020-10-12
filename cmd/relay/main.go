@@ -13,6 +13,7 @@ import (
 
 	_ "net/http/pprof"
 
+	"git.sr.ht/~athorp96/forest-ex/expiration"
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/grove"
 	"git.sr.ht/~whereswaldon/forest-go/store"
@@ -93,6 +94,13 @@ and will establish Sprout connections to all addresses provided as arguments.
 	}
 	messages := store.NewArchive(grove)
 	defer messages.Destroy()
+
+	// periodically check for expired nodes and remove them from storage
+	expiration.ExpiredPurger{
+		PurgeInterval: time.Hour,
+		Logger:        log.New(log.Writer(), "purge", log.Flags()),
+		ExtendedStore: messages,
+	}.Start(done)
 
 	// track node ids of nodes that we've recently inserted into the grove so that
 	// we know when a new FS write was us or another process

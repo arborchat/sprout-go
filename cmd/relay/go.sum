@@ -1,7 +1,9 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-git.sr.ht/~whereswaldon/forest-go v0.0.0-20200917012818-960be2d2c5cc h1:ZvXYg5i51iaAYgXD9IXkkIQEpGYRMlLd9rBfk9uIroE=
-git.sr.ht/~whereswaldon/forest-go v0.0.0-20200917012818-960be2d2c5cc/go.mod h1:aGmm4R7ifFBvJWOHINDvZcKVOu+ODkD75NmNm/O0zME=
+git.sr.ht/~whereswaldon/forest-ex v0.0.0-20201012002222-096b725746a3 h1:v+k9duU/s9TNpQtwDKcDP50Xq3b+YLxt7UCY7h0MnYg=
+git.sr.ht/~whereswaldon/forest-ex v0.0.0-20201012002222-096b725746a3/go.mod h1:N2PwWOB4JHluCAc9pRmd+78OEqWTw3wYgDQnCCrrQ/Q=
+git.sr.ht/~whereswaldon/forest-go v0.0.0-20201011203633-e3b60d5a8e86 h1:skl5CR7Na2FyoA0xowlsIbhtYSMrxMwQN8awbgVxQHY=
+git.sr.ht/~whereswaldon/forest-go v0.0.0-20201011203633-e3b60d5a8e86/go.mod h1:aGmm4R7ifFBvJWOHINDvZcKVOu+ODkD75NmNm/O0zME=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/ProtonMail/crypto v0.0.0-20200416114516-1fa7f403fb9c h1:DAvlgde2Stu18slmjwikiMPs/CKPV35wSvmJS34z0FU=
