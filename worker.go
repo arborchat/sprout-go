@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"git.sr.ht/~athorp96/forest-ex/expiration"
 	"git.sr.ht/~whereswaldon/forest-go"
 	"git.sr.ht/~whereswaldon/forest-go/fields"
 	"git.sr.ht/~whereswaldon/forest-go/store"
@@ -276,6 +277,13 @@ func (c *Worker) IngestNode(node forest.Node) error {
 func (c *Worker) OnAnnounce(s *Conn, messageID MessageID, nodes []forest.Node) error {
 	c.Printf("Received announce: id:%d quantity:%d", messageID, len(nodes))
 	for _, node := range nodes {
+		if expired, err := expiration.IsExpired(node); err != nil {
+			log.Printf("failed checking %v for expiration; dropping: %v", node.ID(), err)
+			continue
+		} else if expired {
+			log.Printf("dropping expired node %v", node.ID())
+			continue
+		}
 		// if we already have it, don't worry about it
 		// This ensures that we don't announce it again to our peers and create
 		// an infinite cycle of announcements
