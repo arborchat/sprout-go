@@ -1,9 +1,10 @@
-git.sr.ht/~whereswaldon/forest-ex v0.0.0-20201012002222-096b725746a3 h1:v+k9duU/s9TNpQtwDKcDP50Xq3b+YLxt7UCY7h0MnYg=
-git.sr.ht/~whereswaldon/forest-ex v0.0.0-20201012002222-096b725746a3/go.mod h1:N2PwWOB4JHluCAc9pRmd+78OEqWTw3wYgDQnCCrrQ/Q=
-git.sr.ht/~whereswaldon/forest-go v0.0.0-20201011203633-e3b60d5a8e86 h1:skl5CR7Na2FyoA0xowlsIbhtYSMrxMwQN8awbgVxQHY=
+git.sr.ht/~athorp96/forest-ex v0.0.0-20201012012825-01012995abe1 h1:quRwMtoF0S/VUHQBoL8fkqrKq/uYYB7pEGAGAFzLoXA=
+git.sr.ht/~athorp96/forest-ex v0.0.0-20201012012825-01012995abe1/go.mod h1:N2PwWOB4JHluCAc9pRmd+78OEqWTw3wYgDQnCCrrQ/Q=
 git.sr.ht/~whereswaldon/forest-go v0.0.0-20201011203633-e3b60d5a8e86/go.mod h1:aGmm4R7ifFBvJWOHINDvZcKVOu+ODkD75NmNm/O0zME=
-github.com/ProtonMail/crypto v0.0.0-20200420072808-71bec3603bf3 h1:JW27/kGLQzeM1Fxg5YQhdkTEAU7HIAHMgSag35zVTnY=
-github.com/ProtonMail/crypto v0.0.0-20200420072808-71bec3603bf3/go.mod h1:Pxr7w4gA2ikI4sWyYwEffm+oew1WAJHzG1SiDpQMkrI=
+git.sr.ht/~whereswaldon/forest-go v0.0.0-20201031211815-0e51e2b5d99c h1:wnvOSTGcl+azcfEqcQFWcbpAyOltNtlIpvlsfNVt7CY=
+git.sr.ht/~whereswaldon/forest-go v0.0.0-20201031211815-0e51e2b5d99c/go.mod h1:alCa7uFQGCgNhV//TWMPwHnoBICVL3Lj1JAqvlJSZRc=
+github.com/ProtonMail/crypto v0.0.0-20201022141144-3fe6b6992c0f h1:CrqdTsoF7teMqQok+iHUx3yjYJfkpDuU7y/nIxRJ2rY=
+github.com/ProtonMail/crypto v0.0.0-20201022141144-3fe6b6992c0f/go.mod h1:Pxr7w4gA2ikI4sWyYwEffm+oew1WAJHzG1SiDpQMkrI=
 github.com/fsnotify/fsnotify v1.4.7 h1:IXs+QLmnXW2CcXuY+8Mzv/fWEsPGWxqefPtCP5CnV9I=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
